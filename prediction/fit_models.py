@@ -15,6 +15,7 @@ parser.add_argument("--loglevel", action="store", help="Log level: DEBUG, INFO, 
 parser.add_argument("--logfile", action="store", metavar="PATH", help="Path to log file.")
 parser.add_argument("--output_path", action="store", default=".", help="Where to put output files")
 parser.add_argument("--days", default=5000, type=int, help="Fit models using the last n days")
+parser.add_argument("--models", default="clf,lstm", help="Models to fit: clf, lstm")
 parser.add_argument("filename", metavar="FILE", nargs='*', help="Stock data input files to process")
 
 args = parser.parse_args()
@@ -30,7 +31,9 @@ if __name__ == "__main__":
         Log.info("Running models for %s", filename)
         asset = Asset()
         asset.read_csv(filename)
-        # fit_models(asset)
-        # fit_models_crossvalidated(asset)
-        # fit_models_crossvalidated_test(asset)
-        fit_LSTM_models(asset)
+        for model in args.models.split(","):
+            if model == "lstm":
+                fit_LSTM_models(asset)
+            elif model == "clf":
+                fit_models_crossvalidated(asset)
+                # fit_models_crossvalidated_test(asset)
