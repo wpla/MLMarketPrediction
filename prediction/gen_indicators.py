@@ -3,7 +3,7 @@ import argparse
 from asset import Asset
 from config import config, Configuration
 from log import Log
-from models import gen_indicators
+from indicators import gen_indicators
 
 # Argument parsing
 parser = argparse.ArgumentParser(prog="gen_indicators",

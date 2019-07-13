@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 
+from log import Log
+
 
 def gen_EMA(data: pd.Series, n=20):
     alpha = 1 / (n + 1)
@@ -278,3 +280,115 @@ def gen_multinomial_response(data: pd.DataFrame, returns, vola):
             raise ValueError("Invalid range for return: {}".format(returns[t]))
 
     return pd.Series(multinomial, index=data.index)
+
+
+def gen_indicators(asset):
+    # Generate EMA indicator
+    Log.info("Generating EMA...")
+    EMA_5 = gen_EMA(asset.data["Close"], n=5)
+    EMA_10 = gen_EMA(asset.data["Close"], n=10)
+    EMA_20 = gen_EMA(asset.data["Close"], n=20)
+    EMA_50 = gen_EMA(asset.data["Close"], n=50)
+    asset.append("EMA_5", EMA_5)
+    asset.append("EMA_10", EMA_10)
+    asset.append("EMA_20", EMA_20)
+    asset.append("EMA_50", EMA_50)
+
+    # Generate RSI indicator
+    Log.info("Generating RSI...")
+    RSI_10 = gen_RSI(asset.data["Close"], n=10)
+    RSI_20 = gen_RSI(asset.data["Close"], n=20)
+    RSI_50 = gen_RSI(asset.data["Close"], n=50)
+    asset.append("RSI_10", RSI_10)
+    asset.append("RSI_20", RSI_20)
+    asset.append("RSI_50", RSI_50)
+
+    # Generate Stochastics K%D indicator
+    Log.info("Generating Stochastics K%D...")
+    Stochastics_K_14, Stochastics_D_fast, Stochastics_D_slow = \
+        gen_Stochastics(asset.data["Close"], K_n=14)
+    asset.append("Stochastics_K_14", Stochastics_K_14)
+    asset.append("Stochastics_D_fast", Stochastics_D_fast)
+    asset.append("Stochastics_D_slow", Stochastics_D_slow)
+
+    # Generate MACD indicator
+    Log.info("Generating MACD...")
+    MACD, MACD_Signal = gen_MACD(asset.data["Close"])
+    asset.append("MACD(12,26,9)", MACD)
+    asset.append("MACD_Signal(12,26,9)", MACD_Signal)
+
+    # Generate CCI indicator
+    Log.info("Generating CCI...")
+    CCI_10 = gen_CCI(asset.data, n=10)
+    CCI_20 = gen_CCI(asset.data, n=20)
+    CCI_50 = gen_CCI(asset.data, n=50)
+    asset.append("CCI_10", CCI_10)
+    asset.append("CCI_20", CCI_20)
+    asset.append("CCI_50", CCI_50)
+
+    # Generate ATR indicator
+    Log.info("Generating ATR...")
+    ATR_10 = gen_ATR(asset.data, n=10)
+    ATR_20 = gen_ATR(asset.data, n=20)
+    ATR_50 = gen_ATR(asset.data, n=50)
+    asset.append("ATR_10", ATR_10)
+    asset.append("ATR_20", ATR_20)
+    asset.append("ATR_50", ATR_50)
+
+    # Generate ADL indicator
+    Log.info("Generating ADL...")
+    ADL = gen_ADL(asset.data)
+    asset.append("ADL", ADL)
+
+    # Generate returns
+    Log.info("Generating returns...")
+    returns, log_returns, ann_log_returns, mon_log_returns, qu_log_return, yearly_log_returns = \
+        gen_returns(asset.data)
+
+    asset.append("returns", returns)
+    asset.append("log_returns", log_returns)
+    asset.append("ann_log_returns", ann_log_returns)
+    asset.append("monthly_log_returns", mon_log_returns)
+    asset.append("quarterly_log_returns", qu_log_return)
+    asset.append("yearly_log_returns", yearly_log_returns)
+
+    # Generate simple volatility
+    Log.info("Generating simple volatility...")
+    vola_10, ann_vola_10 = gen_SimpleVola(asset.data["Close"], days=10)
+    vola_20, ann_vola_20 = gen_SimpleVola(asset.data["Close"], days=20)
+    asset.append("vola_10", vola_10)
+    asset.append("ann_vola_10", ann_vola_10)
+    asset.append("vola_20", vola_20)
+    asset.append("ann_vola_20", ann_vola_20)
+
+    # Generate EWMA volatility
+    Log.info("Generating EWMA volatility...")
+    EWMA_ann_vola_10 = gen_EWMA_Vola(asset.data["Close"], n=10)
+    EWMA_ann_vola_20 = gen_EWMA_Vola(asset.data["Close"], n=20)
+    asset.append("EWMA_ann_vola_10", EWMA_ann_vola_10)
+    asset.append("EWMA_ann_vola_20", EWMA_ann_vola_20)
+
+    # Generate Yang & Zhang volatility
+    Log.info("Generating Yang & Zhang volatility...")
+    YZ_vola_10 = gen_YZ_Vola(asset.data, days=10)
+    YZ_vola_20 = gen_YZ_Vola(asset.data, days=20)
+    asset.append("YZ_Vola_10", YZ_vola_10)
+    asset.append("YZ_Vola_20", YZ_vola_20)
+
+    # Generate binary and multinomial response variables
+    Log.info("Generating response variables...")
+    binary = gen_binary_response(asset.data, ann_log_returns)
+    multinomial_YZ_10 = gen_multinomial_response(asset.data, ann_log_returns, YZ_vola_10)
+    multinomial_EWMA_10 = gen_multinomial_response(asset.data, ann_log_returns, EWMA_ann_vola_10)
+    multinomial_YZ_20 = gen_multinomial_response(asset.data, ann_log_returns, YZ_vola_20)
+    multinomial_EWMA_20 = gen_multinomial_response(asset.data, ann_log_returns, EWMA_ann_vola_20)
+
+    asset.append("binary", binary)
+    asset.append("multinomial_YZ_10", multinomial_YZ_10)
+    asset.append("multinomial_YZ_20", multinomial_YZ_20)
+    asset.append("multinomial_EWMA_10", multinomial_EWMA_10)
+    asset.append("multinomial_EWMA_20", multinomial_EWMA_20)
+
+    return asset
+
+

@@ -21,116 +21,6 @@ from config import config
 from log import Log
 
 
-def gen_indicators(asset):
-    # Generate EMA indicator
-    Log.info("Generating EMA...")
-    EMA_5 = indicators.gen_EMA(asset.data["Close"], n=5)
-    EMA_10 = indicators.gen_EMA(asset.data["Close"], n=10)
-    EMA_20 = indicators.gen_EMA(asset.data["Close"], n=20)
-    EMA_50 = indicators.gen_EMA(asset.data["Close"], n=50)
-    asset.append("EMA_5", EMA_5)
-    asset.append("EMA_10", EMA_10)
-    asset.append("EMA_20", EMA_20)
-    asset.append("EMA_50", EMA_50)
-
-    # Generate RSI indicator
-    Log.info("Generating RSI...")
-    RSI_10 = indicators.gen_RSI(asset.data["Close"], n=10)
-    RSI_20 = indicators.gen_RSI(asset.data["Close"], n=20)
-    RSI_50 = indicators.gen_RSI(asset.data["Close"], n=50)
-    asset.append("RSI_10", RSI_10)
-    asset.append("RSI_20", RSI_20)
-    asset.append("RSI_50", RSI_50)
-
-    # Generate Stochastics K%D indicator
-    Log.info("Generating Stochastics K%D...")
-    Stochastics_K_14, Stochastics_D_fast, Stochastics_D_slow = \
-        indicators.gen_Stochastics(asset.data["Close"], K_n=14)
-    asset.append("Stochastics_K_14", Stochastics_K_14)
-    asset.append("Stochastics_D_fast", Stochastics_D_fast)
-    asset.append("Stochastics_D_slow", Stochastics_D_slow)
-
-    # Generate MACD indicator
-    Log.info("Generating MACD...")
-    MACD, MACD_Signal = indicators.gen_MACD(asset.data["Close"])
-    asset.append("MACD(12,26,9)", MACD)
-    asset.append("MACD_Signal(12,26,9)", MACD_Signal)
-
-    # Generate CCI indicator
-    Log.info("Generating CCI...")
-    CCI_10 = indicators.gen_CCI(asset.data, n=10)
-    CCI_20 = indicators.gen_CCI(asset.data, n=20)
-    CCI_50 = indicators.gen_CCI(asset.data, n=50)
-    asset.append("CCI_10", CCI_10)
-    asset.append("CCI_20", CCI_20)
-    asset.append("CCI_50", CCI_50)
-
-    # Generate ATR indicator
-    Log.info("Generating ATR...")
-    ATR_10 = indicators.gen_ATR(asset.data, n=10)
-    ATR_20 = indicators.gen_ATR(asset.data, n=20)
-    ATR_50 = indicators.gen_ATR(asset.data, n=50)
-    asset.append("ATR_10", ATR_10)
-    asset.append("ATR_20", ATR_20)
-    asset.append("ATR_50", ATR_50)
-
-    # Generate ADL indicator
-    Log.info("Generating ADL...")
-    ADL = indicators.gen_ADL(asset.data)
-    asset.append("ADL", ADL)
-
-    # Generate returns
-    Log.info("Generating returns...")
-    returns, log_returns, ann_log_returns, mon_log_returns, qu_log_return, yearly_log_returns = \
-        indicators.gen_returns(asset.data)
-
-    asset.append("returns", returns)
-    asset.append("log_returns", log_returns)
-    asset.append("ann_log_returns", ann_log_returns)
-    asset.append("monthly_log_returns", mon_log_returns)
-    asset.append("quarterly_log_returns", qu_log_return)
-    asset.append("yearly_log_returns", yearly_log_returns)
-
-    # Generate simple volatility
-    Log.info("Generating simple volatility...")
-    vola_10, ann_vola_10 = indicators.gen_SimpleVola(asset.data["Close"], days=10)
-    vola_20, ann_vola_20 = indicators.gen_SimpleVola(asset.data["Close"], days=20)
-    asset.append("vola_10", vola_10)
-    asset.append("ann_vola_10", ann_vola_10)
-    asset.append("vola_20", vola_20)
-    asset.append("ann_vola_20", ann_vola_20)
-
-    # Generate EWMA volatility
-    Log.info("Generating EWMA volatility...")
-    EWMA_ann_vola_10 = indicators.gen_EWMA_Vola(asset.data["Close"], n=10)
-    EWMA_ann_vola_20 = indicators.gen_EWMA_Vola(asset.data["Close"], n=20)
-    asset.append("EWMA_ann_vola_10", EWMA_ann_vola_10)
-    asset.append("EWMA_ann_vola_20", EWMA_ann_vola_20)
-
-    # Generate Yang & Zhang volatility
-    Log.info("Generating Yang & Zhang volatility...")
-    YZ_vola_10 = indicators.gen_YZ_Vola(asset.data, days=10)
-    YZ_vola_20 = indicators.gen_YZ_Vola(asset.data, days=20)
-    asset.append("YZ_Vola_10", YZ_vola_10)
-    asset.append("YZ_Vola_20", YZ_vola_20)
-
-    # Generate binary and multinomial response variables
-    Log.info("Generating response variables...")
-    binary = indicators.gen_binary_response(asset.data, ann_log_returns)
-    multinomial_YZ_10 = indicators.gen_multinomial_response(asset.data, ann_log_returns, YZ_vola_10)
-    multinomial_EWMA_10 = indicators.gen_multinomial_response(asset.data, ann_log_returns, EWMA_ann_vola_10)
-    multinomial_YZ_20 = indicators.gen_multinomial_response(asset.data, ann_log_returns, YZ_vola_20)
-    multinomial_EWMA_20 = indicators.gen_multinomial_response(asset.data, ann_log_returns, EWMA_ann_vola_20)
-
-    asset.append("binary", binary)
-    asset.append("multinomial_YZ_10", multinomial_YZ_10)
-    asset.append("multinomial_YZ_20", multinomial_YZ_20)
-    asset.append("multinomial_EWMA_10", multinomial_EWMA_10)
-    asset.append("multinomial_EWMA_20", multinomial_EWMA_20)
-
-    return asset
-
-
 def make_data(asset, response_col, input_col, window_size=10, days=5000):
     y = []  # endogenous variable
     X = []  # Matrix of exogenous variables
@@ -372,6 +262,10 @@ def create_input_data(asset, input_var, input_param):
             RSI = indicators.gen_RSI(asset.data["Close"], input_param)
             asset.append(input_col, RSI)
             Log.info("%s created", input_col)
+        elif input_var == "EMA" and input_param is not None:
+            EMA = indicators.gen_EMA(asset.data["Close"], n=input_param)
+            asset.append(input_col, EMA)
+            Log.info("%s created", input_col)
         elif input_var == "Stochastic" and input_param is not None:
             K, _, D = indicators.gen_Stochastics(asset.data["Close"], K_n=input_param)
             asset.append(input_col, K)
@@ -409,7 +303,8 @@ def fit_cross_validation(asset,
                          response_params=None,
                          input_vars=None,
                          input_params=None,
-                         window_sizes=None):
+                         window_sizes=None,
+                         use_test_train_split=False):
     Log.info("== Fitting model %s for %s", model_name, asset.symbol)
 
     model_scores = {}
@@ -419,7 +314,7 @@ def fit_cross_validation(asset,
 
     outfile = open(os.path.join(config().output_path(), model_name + "_" + asset.symbol + ".csv"), "w")
     outfile.write("asset;model;response_var;response_param;input_var;input_param;window_size;model_param;"
-                  "cv_score_mean;cv_score_std;test_score\n")
+                  "n_train;n_test;cv_score_mean;cv_score_std;test_score\n")
 
     for (response_var, input_var, window_size, model_param) in itertools.product(
             response_vars, input_vars, window_sizes, model_params):
@@ -449,7 +344,17 @@ def fit_cross_validation(asset,
 
                 # Create test and training data
                 y, X = make_data(asset, response_col=response_col, input_col=input_col, window_size=window_size)
-                X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+
+                # Split data into training and test data
+                if use_test_train_split:
+                    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+                else:
+                    # Use the last 20% of the time series as test data
+                    test_len = int(len(X) * 0.2)
+                    X_train = X[:-test_len]
+                    y_train = y[:-test_len]
+                    X_test = X[-test_len:]
+                    y_test = y[-test_len:]
 
                 if use_scaler:
                     scaler = StandardScaler()
@@ -467,13 +372,17 @@ def fit_cross_validation(asset,
                 Log.info("Model test accuracy: %0.2f" % test_score)
 
                 # Write results to file
-                outfile.write("%s;%s Training;%s;%s;%s;%s;%s;%s;%.4f;%.4f;%.4f\n" % (asset.symbol, model_name,
-                                                                                     response_var, response_param,
-                                                                                     input_var,
-                                                                                     input_param, str(window_size),
-                                                                                     str(model_param),
-                                                                                     scores.mean(), scores.std(),
-                                                                                     test_score))
+                outfile.write("%s;%s Training;%s;%s;%s;%s;%s;%s;"
+                              "%d;%d;"
+                              "%.4f;%.4f;%.4f\n" % (asset.symbol, model_name,
+                                                    response_var, response_param,
+                                                    input_var,
+                                                    input_param,
+                                                    str(window_size),
+                                                    str(model_param),
+                                                    len(X_train), len(X_test),
+                                                    scores.mean(), scores.std(),
+                                                    test_score))
 
                 # Store parameters and accuracy
                 model_scores[(response_var, response_param, input_var, input_param, window_size, str(model_param))] = (
@@ -504,7 +413,8 @@ def fit_cross_validation(asset,
 
         # Write winner to file
         outfile.write("%s;Winner %s;%s;%s;%s;%s;%s;%s;%.4f;%.4f;%.4f\n" % (
-            asset.symbol, model_name, response_var, response_param, input_var, input_param, str(window_size), model_param_str,
+            asset.symbol, model_name, response_var, response_param, input_var, input_param, str(window_size),
+            model_param_str,
             best_cv_score, best_cv_score_std, test_score))
     else:
         Log.warn("No best model found")
@@ -649,9 +559,10 @@ def fit_models_crossvalidated(asset):
     response_params = {'multinomial_YZ': [10, 20],
                        'multinomial_EWMA': [10, 20]
                        }
-    input_vars = ["Close", "returns", "log_returns", "ann_log_returns",
+    input_vars = ["Close", "EMA", "returns", "log_returns", "ann_log_returns",
                   "RSI", "Stochastic", "MACD", "CCI", "ATR", "ADL"]
-    input_params = {"RSI": [5, 10, 20, 50],
+    input_params = {"EMA": [5, 10, 20, 50],
+                    "RSI": [5, 10, 20, 50],
                     "Stochastic": [5, 10, 20, 50],
                     "MACD": [5, 10, 20, 50],
                     "CCI": [5, 10, 20, 50],
@@ -723,7 +634,6 @@ def fit_models_crossvalidated(asset):
     fit_cross_validation(asset, "DTRegr", create_clf=create_decision_tree_regressor, use_scaler=False,
                          model_params=model_params, response_vars=response_vars, response_params=response_params,
                          input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
 
     # Bagging Decision Trees
     response_vars = ['multinomial_YZ', 'multinomial_EWMA']
@@ -838,7 +748,6 @@ def fit_models_crossvalidated(asset):
                          model_params=model_params, response_vars=response_vars, response_params=response_params,
                          input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
 
-
     # ANN Regressor
     response_vars = ['log_returns']
     model_params = [{'solver': 'lbfgs', 'hidden_layer_sizes': (10)},
@@ -848,6 +757,7 @@ def fit_models_crossvalidated(asset):
     fit_cross_validation(asset, "ANNRegr", create_clf=create_MLP_regressor, use_scaler=True,
                          model_params=model_params, response_vars=response_vars, response_params=response_params,
                          input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
+
 
 def fit_models_crossvalidated_test(asset):
     response_params = {'multinomial_YZ': [10]}
@@ -924,7 +834,6 @@ def fit_models_crossvalidated_test(asset):
                          model_params=model_params, response_vars=response_vars, response_params=response_params,
                          input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
 
-
     # Bagging Decision Trees
     response_vars = ['multinomial_YZ']
     model_params = [{'n_estimators': 100},
@@ -1029,7 +938,6 @@ def fit_models_crossvalidated_test(asset):
     fit_cross_validation(asset, "ANNMulti", create_clf=create_MLP, use_scaler=True,
                          model_params=model_params, response_vars=response_vars, response_params=response_params,
                          input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
 
     # ANN Regressor
     response_vars = ['log_returns']
