@@ -3,6 +3,7 @@ import argparse
 from asset import Asset
 from config import config, Configuration
 from log import Log
+from lstm_model import fit_LSTM_model
 from models import fit_models, fit_models_crossvalidated, fit_models_crossvalidated_test
 
 # Argument parsing
@@ -31,3 +32,4 @@ if __name__ == "__main__":
         # fit_models(asset)
         fit_models_crossvalidated(asset)
         # fit_models_crossvalidated_test(asset)
+        # fit_LSTM_model(asset)

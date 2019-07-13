@@ -29,11 +29,11 @@ def make_data(asset, response_col, input_col, window_size=10, days=5000):
     input_vars = asset.data[input_col]
     input_len = len(asset.data[input_col])
 
-    for t in range(input_len - 1, input_len - days, -(window_size + 1)):
+    for t in range(input_len - 1, max([input_len - days, 0]), -(window_size + 1)):
         y_t = response_var[t]
         X_t = input_vars[t - window_size:t]
 
-        if not X_t.isna().any() and not pd.isna(y_t):
+        if not X_t.isna().any() and not pd.isna(y_t) and len(X_t) == window_size:
             y.append(y_t)
             X.append(X_t)
 
@@ -349,12 +349,16 @@ def fit_cross_validation(asset,
                 if use_test_train_split:
                     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
                 else:
-                    # Use the last 20% of the time series as test data
+                    # Use the first 20% of the time series as test data.
+                    # The first elements contains the newer data.
                     test_len = int(len(X) * 0.2)
-                    X_train = X[:-test_len]
-                    y_train = y[:-test_len]
-                    X_test = X[-test_len:]
-                    y_test = y[-test_len:]
+                    X_test = X[:test_len]
+                    y_test = y[:test_len]
+                    X_train = X[test_len:]
+                    y_train = y[test_len:]
+
+                Log.info("n_train: X: %d, y: %d", len(X_train), len(y_train))
+                Log.info("n_test: X: %d, y: %d", len(X_test), len(y_test))
 
                 if use_scaler:
                     scaler = StandardScaler()
