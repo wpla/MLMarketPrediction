@@ -1,22 +1,21 @@
-from pycm import ConfusionMatrix
-from sklearn import svm
-from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier, BaggingRegressor, RandomForestRegressor, \
-    AdaBoostRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.naive_bayes import GaussianNB, ComplementNB, MultinomialNB
-from sklearn import tree
-from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
-from sklearn.ensemble import BaggingClassifier
-from sklearn.linear_model import LogisticRegression, LinearRegression
-from sklearn.neural_network import MLPClassifier, MLPRegressor
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import cross_val_score
-import indicators
 import itertools
 import os
-import numpy as np
-import pandas as pd
 
+import pandas as pd
+import sklearn
+from sklearn import svm
+from sklearn import tree
+from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier, BaggingRegressor, RandomForestRegressor, \
+    AdaBoostRegressor
+from sklearn.ensemble import BaggingClassifier
+from sklearn.linear_model import LogisticRegression, LinearRegression
+from sklearn.model_selection import cross_val_score
+from sklearn.naive_bayes import GaussianNB, MultinomialNB
+from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
+from sklearn.neural_network import MLPClassifier, MLPRegressor
+from sklearn.preprocessing import StandardScaler
+
+import indicators
 from config import config
 from log import Log
 
@@ -40,182 +39,34 @@ def make_data(asset, response_col, input_col, window_size=10, days=5000):
     return y, X
 
 
-def to_str(d):
-    def to_str_(k, v):
-        if v is None:
-            return "%s: n/a" % (k)
-        elif type(v) == str:
-            return "%s: %s" % (k, v)
-        else:
-            return "%s: %.2f" % (k, v)
+def make_data_multicol(asset, response_col, input_cols, window_size=10, days=5000):
+    y = []  # Response variable
+    X = []  # Matrix of input variables
 
-    return ", ".join([to_str_(k, v) for k, v in d.items()])
+    response_var = asset.data[response_col]
+    input_vars = asset.data[input_cols]
+    input_len = len(asset.data[input_cols])
 
+    for t in range(input_len - 1, max([input_len - days, 0]), -(window_size + 1)):
+        y_t = response_var[t]
+        X_t = input_vars[t - window_size:t]
 
-def print_confusion_scores(y_test, y_pred):
-    cm = ConfusionMatrix(actual_vector=y_test, predict_vector=y_pred)
-    Log.info("TPR (True positive): %s", to_str(cm.TPR))
-    Log.info("TNR (True negative): %s", to_str(cm.TNR))
-    Log.info("PPV (Positive predictive value): %s", to_str(cm.PPV))
-    Log.info("NPV (Negative predictive value): %s", to_str(cm.NPV))
-    Log.info("ACC (Accuracy): %s", to_str(cm.ACC))
-    Log.info("AUC (Area under the ROC curve): %s", to_str(cm.AUC))
+        if not X_t.isna().any().any() and not pd.isna(y_t) and len(X_t) == window_size:
+            y.append(y_t)
+            X.append(X_t)
+
+    return y, X
 
 
-def add_result(results, method_name, y_col, X_col, window_size, score):
-    if method_name not in results:
-        results[method_name] = {}
-    if X_col not in results[method_name]:
-        results[method_name][X_col] = {}
-    if y_col not in results[method_name][X_col]:
-        results[method_name][X_col][y_col] = {}
-    if window_size not in results[method_name][X_col][y_col]:
-        results[method_name][X_col][y_col][window_size] = {}
-    results[method_name][X_col][y_col][window_size]["score"] = score
-    return results
-
-
-def fit_binary_logistic_regression(asset, y_col, X_col, window_size, results):
-    y, X = make_data(asset, response_col=y_col, input_col=X_col, window_size=window_size)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
-
-    Log.info("*** Binary logistic regression")
-
-    clf = LogisticRegression(penalty='l2', solver='lbfgs')
-    clf.fit(X_train, y_train)
-    score = clf.score(X_test, y_test)
-
-    results = add_result(results, "Binomial logistic regression", y_col, X_col, window_size, score)
-    return results
-
-
-def fit_multinomial_logistic_regression(asset, y_col, X_col, window_size, results):
-    y, X = make_data(asset, response_col=y_col, input_col=X_col, window_size=window_size)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
-
-    Log.info("*** Multinomial logistic regression")
-
-    clf = LogisticRegression(solver='lbfgs', multi_class='multinomial', max_iter=1000)
-    clf.fit(X_train, y_train)
-    score = clf.score(X_test, y_test)
-
-    results = add_result(results, "Multinomial logistic regression", y_col, X_col, window_size, score)
-    return results
-
-
-def fit_naive_bayes(asset, y_col, X_col, window_size, results):
-    y, X = make_data(asset, response_col=y_col, input_col=X_col, window_size=window_size)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
-
-    Log.info("*** Gaussian Naive Bayes")
-
-    clf = GaussianNB()
-    clf.fit(X_train, y_train)
-    score = clf.score(X_test, y_test)
-    results = add_result(results, "Gaussian Naive Bayes", y_col, X_col, window_size, score)
-    return results
-
-
-def fit_multinomial_naive_bayes(asset, y_col, X_col, window_size, results):
-    y, X = make_data(asset, response_col=y_col, input_col=X_col, window_size=window_size)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
-
-    Log.info("*** Multinomial Naive Bayes")
-
-    clf = MultinomialNB()
-    clf.fit(X_train, y_train)
-    score = clf.score(X_test, y_test)
-    results = add_result(results, "Multinomial Naive Bayes", y_col, X_col, window_size, score)
-    return results
-
-
-def fit_support_vector_machines(asset, y_col, X_col, window_size, results):
-    y, X = make_data(asset, response_col=y_col, input_col=X_col, window_size=window_size)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
-
-    Log.info("*** Support Vector Machines")
-
-    clf = svm.SVC(gamma='scale', decision_function_shape='ovo')
-    clf.fit(X_train, y_train)
-    score = clf.score(X_test, y_test)
-    results = add_result(results, "Support Vector Machines", y_col, X_col, window_size, score)
-    return results
-
-
-def fit_KNN(asset, y_col, X_col, window_size, results):
-    y, X = make_data(asset, response_col=y_col, input_col=X_col, window_size=window_size)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
-
-    Log.info("*** KNN")
-
-    clf = KNeighborsClassifier(n_neighbors=3)
-    clf.fit(X_train, y_train)
-    score = clf.score(X_test, y_test)
-
-    results = add_result(results, "KNN", y_col, X_col, window_size, score)
-    return results
-
-
-def fit_decision_trees(asset, y_col, X_col, window_size, results):
-    y, X = make_data(asset, response_col=y_col, input_col=X_col, window_size=window_size)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
-
-    Log.info("*** Decision Trees")
-
-    clf = tree.DecisionTreeClassifier()
-    clf.fit(X_train, y_train)
-    score = clf.score(X_test, y_test)
-
-    results = add_result(results, "Decision Trees", y_col, X_col, window_size, score)
-    return results
-
-
-def fit_adaboost(asset, y_col, X_col, window_size, results):
-    y, X = make_data(asset, response_col=y_col, input_col=X_col, window_size=window_size)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
-
-    Log.info("*** AdaBoost")
-
-    clf = AdaBoostClassifier(n_estimators=100, random_state=0)
-    clf.fit(X_train, y_train)
-    score = clf.score(X_test, y_test)
-
-    results = add_result(results, "AdaBoost", y_col, X_col, window_size, score)
-    return results
-
-
-def fit_bagging_logistic_regression(asset, y_col, X_col, window_size, results):
-    y, X = make_data(asset, response_col=y_col, input_col=X_col, window_size=window_size)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
-
-    Log.info("*** Bagging (Logistic Regression)")
-
-    clf = BaggingClassifier(LogisticRegression(solver='lbfgs', multi_class='multinomial'),
-                            n_estimators=5, max_samples=0.5, max_features=0.5)
-    clf.fit(X_train, y_train)
-    score = clf.score(X_test, y_test)
-    results = add_result(results, "Bagging (log. regression)", y_col, X_col, window_size, score)
-    return results
-
-
-def fit_ANN(asset, y_col, X_col, window_size, results):
-    y, X = make_data(asset, response_col=y_col, input_col=X_col, window_size=window_size)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
-
-    Log.info("*** ANN")
-
-    scaler = StandardScaler()
-    scaler.fit(X_train)
-    X_train_scaled = scaler.transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-
-    from sklearn.neural_network import MLPClassifier
-    clf = MLPClassifier(solver='lbfgs', alpha=1e-5, hidden_layer_sizes=(6, 2), random_state=1)
-    clf.fit(X_train_scaled, y_train)
-    score = clf.score(X_test_scaled, y_test)
-
-    results = add_result(results, "ANN(6,2)", y_col, X_col, window_size, score)
-    return results
+def split_data(X, y, test_factor=0.2):
+    # Use the first 20% of the time series as test data.
+    # The first elements contains the newer data.
+    test_len = int(len(X) * test_factor)
+    X_test = X[:test_len]
+    y_test = y[:test_len]
+    X_train = X[test_len:]
+    y_train = y[test_len:]
+    return X_train, X_test, y_train, y_test
 
 
 def make_response_col(response_var, response_param):
@@ -343,19 +194,14 @@ def fit_cross_validation(asset,
                 input_col = make_input_col(input_var, input_param)
 
                 # Create test and training data
-                y, X = make_data(asset, response_col=response_col, input_col=input_col, window_size=window_size)
+                y, X = make_data(asset, response_col=response_col, input_col=input_col, window_size=window_size,
+                                 days=config().days())
 
                 # Split data into training and test data
                 if use_test_train_split:
-                    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+                    X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(X, y, random_state=42)
                 else:
-                    # Use the first 20% of the time series as test data.
-                    # The first elements contains the newer data.
-                    test_len = int(len(X) * 0.2)
-                    X_test = X[:test_len]
-                    y_test = y[:test_len]
-                    X_train = X[test_len:]
-                    y_train = y[test_len:]
+                    X_train, X_test, y_train, y_test = split_data(X, y)
 
                 Log.info("n_train: X: %d, y: %d", len(X_train), len(y_train))
                 Log.info("n_test: X: %d, y: %d", len(X_test), len(y_test))
@@ -773,6 +619,8 @@ def fit_models_crossvalidated_test(asset):
                     "ATR": [10, 20]
                     }
     window_sizes = [5, 10]
+
+    Log.info("Using %d days of data.", config().days())
 
     # Regression
     response_vars = ['log_returns']

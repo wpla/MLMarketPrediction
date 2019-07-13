@@ -3,7 +3,7 @@ import argparse
 from asset import Asset
 from config import config, Configuration
 from log import Log
-from lstm_model import fit_LSTM_model
+from lstm_model import fit_LSTM_models
 from models import fit_models, fit_models_crossvalidated, fit_models_crossvalidated_test
 
 # Argument parsing
@@ -14,6 +14,7 @@ parser.add_argument("-c", "--config", metavar="PATH", nargs="*", action="store",
 parser.add_argument("--loglevel", action="store", help="Log level: DEBUG, INFO, WARN, ERROR")
 parser.add_argument("--logfile", action="store", metavar="PATH", help="Path to log file.")
 parser.add_argument("--output_path", action="store", default=".", help="Where to put output files")
+parser.add_argument("--days", default=5000, type=int, help="Fit models using the last n days")
 parser.add_argument("filename", metavar="FILE", nargs='*', help="Stock data input files to process")
 
 args = parser.parse_args()
@@ -30,6 +31,6 @@ if __name__ == "__main__":
         asset = Asset()
         asset.read_csv(filename)
         # fit_models(asset)
-        fit_models_crossvalidated(asset)
+        # fit_models_crossvalidated(asset)
         # fit_models_crossvalidated_test(asset)
-        # fit_LSTM_model(asset)
+        fit_LSTM_models(asset)

@@ -29,6 +29,11 @@ class Configuration:
             return self.args.output_path
         return self.config.get("General", "output_path")
 
+    def days(self):
+        if hasattr(self.args, "days"):
+            return self.args.days
+        return self.config.getint("General", "days", fallback=5000)
+
     def loglevel(self):
         if hasattr(self.args, "loglevel") and self.args.loglevel is not None:
             str_value = self.args.loglevel

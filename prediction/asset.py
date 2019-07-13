@@ -42,7 +42,7 @@ class Asset:
             outfile.write("Name: %s\n" % self.name)
         if self.exchange is not None:
             outfile.write("Exchange: %s\n" % self.exchange)
-        self.data.to_csv(outfile, sep=";")
+        self.data.to_csv(outfile, sep=";", line_terminator='\n')
 
     def append(self, col, series: pd.Series):
         self.data[col] = series
