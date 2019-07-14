@@ -159,7 +159,7 @@ def fit_LSTM_models_categorical(asset):
     # We iterate over the following parameters
     # response_vars = ["multinomial_YZ", "multinomial_EWMA"]
     response_vars = ["multinomial_EWMA"]
-    response_params = [10]
+    response_params = [20]
     input_vars_list = [('Close',),
                        ('EMA',),
                        ('returns',),
