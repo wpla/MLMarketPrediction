@@ -275,8 +275,8 @@ def fit_LSTM_models_regression(asset):
 
 
 def fit_LSTM_models(asset):
-    # fit_LSTM_models_categorical(asset)
-    fit_LSTM_models_regression(asset)
+    fit_LSTM_models_categorical(asset)
+    # fit_LSTM_models_regression(asset)
 
     ## Only for test purposes
     # fit_LSTM_model_test_multi()

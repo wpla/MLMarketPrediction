@@ -16,8 +16,8 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/prediction/fit_models.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="280">
-              <caret line="24" selection-start-line="24" selection-end-line="24" />
+            <state relative-caret-position="432">
+              <caret line="35" column="27" selection-start-line="35" selection-start-column="27" selection-end-line="35" selection-end-column="27" />
               <folding>
                 <element signature="e#0#15#0" expanded="true" />
               </folding>
@@ -64,8 +64,8 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/prediction/lstm_model.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="225">
-              <caret line="271" selection-start-line="271" selection-end-line="271" />
+            <state relative-caret-position="359">
+              <caret line="278" lean-forward="true" selection-start-line="278" selection-end-line="278" />
               <folding>
                 <element signature="e#0#9#0" expanded="true" />
               </folding>
@@ -399,7 +399,21 @@
       <option name="project" value="LOCAL" />
       <updated>1563050055013</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="update">
+      <created>1563118457290</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1563118457290</updated>
+    </task>
+    <task id="LOCAL-00006" summary="update YZ-20">
+      <created>1563119887389</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1563119887389</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="ToolWindowManager">
@@ -448,7 +462,8 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="update" />
-    <option name="LAST_COMMIT_MESSAGE" value="update" />
+    <MESSAGE value="update YZ-20" />
+    <option name="LAST_COMMIT_MESSAGE" value="update YZ-20" />
   </component>
   <component name="editorHistoryManager">
     <entry file="file://$PROJECT_DIR$/prediction/indicators.yp.py" />
@@ -617,8 +632,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/prediction/fit_models.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="280">
-          <caret line="24" selection-start-line="24" selection-end-line="24" />
+        <state relative-caret-position="432">
+          <caret line="35" column="27" selection-start-line="35" selection-start-column="27" selection-end-line="35" selection-end-column="27" />
           <folding>
             <element signature="e#0#15#0" expanded="true" />
           </folding>
@@ -627,8 +642,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/prediction/lstm_model.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="225">
-          <caret line="271" selection-start-line="271" selection-end-line="271" />
+        <state relative-caret-position="359">
+          <caret line="278" lean-forward="true" selection-start-line="278" selection-end-line="278" />
           <folding>
             <element signature="e#0#9#0" expanded="true" />
           </folding>
