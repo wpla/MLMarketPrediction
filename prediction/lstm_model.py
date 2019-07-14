@@ -157,8 +157,9 @@ def fit_LSTM_model_regression(asset, response_var_param, input_vars, window_size
 
 def fit_LSTM_models_categorical(asset):
     # We iterate over the following parameters
-    response_vars = ["multinomial_YZ", "multinomial_EWMA"]
-    response_params = [10, 20]
+    # response_vars = ["multinomial_YZ", "multinomial_EWMA"]
+    response_vars = ["multinomial_YZ"]
+    response_params = [20]
     input_vars_list = [('Close',),
                        ('EMA',),
                        ('returns',),
