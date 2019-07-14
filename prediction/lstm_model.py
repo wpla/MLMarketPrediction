@@ -90,6 +90,9 @@ def fit_LSTM_model_categorical(asset, response_var_param, input_vars, window_siz
             "%s;%s;%s;%s;%s;%s;%d;%d;%.4f;%.4f\n" % (asset.symbol, response_var, response_param, str(input_vars),
                                                      model_name, str(model_layers), len(X_train), len(X_test), loss,
                                                      acc))
+        outfile.flush()
+
+    return asset
 
 
 def fit_LSTM_model_regression(asset, response_var_param, input_vars, window_size, model_layers, epochs=3, outfile=None):
@@ -147,6 +150,9 @@ def fit_LSTM_model_regression(asset, response_var_param, input_vars, window_size
             "%s;%s;%s;%s;%s;%s;%d;%d;%.5f;%.5f\n" % (asset.symbol, response_var, response_param, str(input_vars),
                                                      model_name, str(model_layers), len(X_train), len(X_test), loss,
                                                      mse))
+        outfile.flush()
+
+    return asset
 
 
 def fit_LSTM_models_categorical(asset):
@@ -186,7 +192,6 @@ def fit_LSTM_models_categorical(asset):
     # model_layers = [(20, 10), (10,)]
     # epochs_list = [3]
 
-
     # Combine input_vars and input_params
     input_vars_param_list = []
     for (var, param) in itertools.product(input_vars_list, input_params_list):
@@ -203,8 +208,8 @@ def fit_LSTM_models_categorical(asset):
             itertools.product(response_vars, response_params, input_vars_param_list, window_sizes, model_layers,
                               epochs_list):
         response_var_param = (response_var, response_param)
-        fit_LSTM_model_categorical(asset, response_var_param, input_vars_param, window_size, model_layers=model_layer,
-                                   epochs=epoch, outfile=outfile)
+        asset = fit_LSTM_model_categorical(asset, response_var_param, input_vars_param, window_size,
+                                           model_layers=model_layer, epochs=epoch, outfile=outfile)
 
     outfile.close()
 
@@ -262,14 +267,14 @@ def fit_LSTM_models_regression(asset):
             itertools.product(response_vars, response_params, input_vars_param_list, window_sizes, model_layers,
                               epochs_list):
         response_var_param = (response_var, response_param)
-        fit_LSTM_model_regression(asset, response_var_param, input_vars_param, window_size, model_layers=model_layer,
-                                  epochs=epoch, outfile=outfile)
+        asset = fit_LSTM_model_regression(asset, response_var_param, input_vars_param, window_size,
+                                          model_layers=model_layer, epochs=epoch, outfile=outfile)
 
     outfile.close()
 
 
 def fit_LSTM_models(asset):
-    fit_LSTM_models_categorical(asset)
+    # fit_LSTM_models_categorical(asset)
     fit_LSTM_models_regression(asset)
 
     ## Only for test purposes
