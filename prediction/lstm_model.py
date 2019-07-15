@@ -205,14 +205,17 @@ def fit_LSTM_models_categorical(asset):
     outfile = open(os.path.join(config().output_path(), "LSTM_Multi_" + asset.symbol + ".csv"), "w")
     outfile.write("asset;response_var;response_param;input_var_params;model;model_layers;n_train;n_test;loss;acc\n")
 
+    count = 0
     for (response_var, response_param, input_vars_param, window_size, model_layer, epoch) in \
             itertools.product(response_vars, response_params, input_vars_param_list, window_sizes, model_layers,
                               epochs_list):
+        count += 1
         response_var_param = (response_var, response_param)
         asset = fit_LSTM_model_categorical(asset, response_var_param, input_vars_param, window_size,
                                            model_layers=model_layer, epochs=epoch, outfile=outfile)
 
     outfile.close()
+    Log.info("%d models fitted.", count)
 
 
 def fit_LSTM_models_regression(asset):
