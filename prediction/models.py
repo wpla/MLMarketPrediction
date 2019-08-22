@@ -69,7 +69,7 @@ def split_data(X, y, test_factor=0.2):
     return X_train, X_test, y_train, y_test
 
 
-def make_response_col(response_var, response_param):
+def make_response_col(response_var, response_param=None):
     if response_param is None:
         return response_var
     elif response_var in ['multinomial_YZ', 'multinomial_EWMA']:
@@ -77,7 +77,7 @@ def make_response_col(response_var, response_param):
     return response_var
 
 
-def create_response_data(asset, response_var, response_param):
+def create_response_data(asset, response_var, response_param=None):
     response_col = make_response_col(response_var, response_param)
     if response_col not in asset.data:
         Log.info("Need to make response variable: %s", response_col)
@@ -104,7 +104,7 @@ def make_input_col(input_var, input_param):
     return input_var + "_" + str(input_param)
 
 
-def create_input_data(asset, input_var, input_param):
+def create_input_data(asset, input_var, input_param=None):
     input_col = make_input_col(input_var, input_param)
 
     if input_col not in asset.data:
@@ -118,7 +118,7 @@ def create_input_data(asset, input_var, input_param):
             asset.append(input_col, EMA)
             Log.info("%s created", input_col)
         elif input_var == "Stochastic" and input_param is not None:
-            K, _, D = indicators.gen_Stochastics(asset.data["Close"], K_n=input_param)
+            K, _, D = indicators.gen_Stochastics(asset.data["Close"], K=input_param)
             asset.append(input_col, K)
             asset.append(input_col + "_D", D)
             Log.info("%s created", input_col)
@@ -418,6 +418,27 @@ def fit_models_crossvalidated(asset):
                     "CCI": [5, 10, 20, 50],
                     "ATR": [5, 10, 20, 50]
                     }
+    window_sizes = [1, 5, 10, 15, 21]
+
+    response_params = {"binary": [1, 5, 20, 30, 60, 90],
+                       "multinomial_YZ": [1, 5, 20, 30, 60, 90],
+                       "tertiary_YZ": [1, 5, 20, 30, 60, 90]}
+    input_vars_list = [('Close',),
+                       ('EMA',),
+                       ('returns',),
+                       ('log_returns',),
+                       ("RSI",),
+                       ("Stochastic",),
+                       ("MACD",),
+                       ("CCI",),
+                       ("ATR",),
+                       ("ADL",),
+                       ("EMA", "RSI"),
+                       ("EMA", "RSI", "Stochastic"),
+                       ("EMA", "RSI", "MACD"),
+                       ("EMA", "RSI", "CCI"),
+                       ("EMA", "RSI", "ATR"),
+                       ]
     window_sizes = [1, 5, 10, 15, 21]
 
     # Linear Regression

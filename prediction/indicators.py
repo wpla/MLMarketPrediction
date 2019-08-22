@@ -1,3 +1,5 @@
+import itertools
+
 import pandas as pd
 import numpy as np
 
@@ -31,18 +33,18 @@ def gen_RSI(data: pd.Series, n=14):
     return pd.Series(RSI, index=data.index)
 
 
-def gen_Stochastics(data: pd.Series, K_n=14, D_n=3):
+def gen_Stochastics(data: pd.Series, K_n=5, D=5, D2=3):
     K = [0] * K_n
-    D_fast = [0] * K_n
-    D_slow = [0] * K_n
+    D_fast = [None] * K_n
+    D_slow = [None] * K_n
     for t in range(K_n, len(data.index)):
-        L = min(data[(t + 1 - K_n):(t + 1)])
-        H = max(data[(t + 1 - K_n):(t + 1)])
+        L = min(filter(None, data[(t + 1 - K_n):(t + 1)]))
+        H = max(filter(None, data[(t + 1 - K_n):(t + 1)]))
         K_t = 100 * (data.iat[t] - L) / (H - L)
         K.append(K_t)
-        D_fast_t = sum(K[-D_n:]) / D_n
+        D_fast_t = sum(filter(None, K[-D:])) / D
         D_fast.append(D_fast_t)
-        D_slow_t = sum(D_fast[-D_n:]) / D_n
+        D_slow_t = sum(filter(None, D_fast[-D2:])) / D2
         D_slow.append(D_slow_t)
     return pd.Series(K, index=data.index), \
            pd.Series(D_fast, index=data.index), \
@@ -159,6 +161,30 @@ def gen_returns(data: pd.DataFrame):
            pd.Series(yearly_log_returns, index=data.index)
 
 
+def gen_returns2(data: pd.DataFrame, delta=1):
+    returns = []
+    log_returns = []
+    ann_log_returns = []
+
+    for t in range(len(data.index) - delta):
+        return_t = (data["Close"].iat[t + delta] - data["Close"].iat[t]) / data["Close"].iat[t]
+        log_return_t = np.log(data["Close"].iat[t + delta] / data["Close"].iat[t])
+        ann_log_returns_t = log_return_t / delta * 252
+
+        returns.append(return_t)
+        log_returns.append(log_return_t)
+        ann_log_returns.append(ann_log_returns_t)
+
+    for i in range(delta):
+        returns.append(None)
+        log_returns.append(None)
+        ann_log_returns.append(None)
+
+    return pd.Series(returns, index=data.index), \
+           pd.Series(log_returns, index=data.index), \
+           pd.Series(ann_log_returns, index=data.index)
+
+
 def gen_SimpleVola(data: pd.Series, days=14):
     days_year = 252
     vola = [None] * days
@@ -257,14 +283,35 @@ def gen_binary_response(data: pd.DataFrame, returns):
     return pd.Series(binary, index=data.index)
 
 
-def gen_multinomial_response(data: pd.DataFrame, returns, vola):
-    multinomial = [None]
+def gen_tertiary_response(data: pd.DataFrame, returns, vola, days):
+    tertiary = [None]
 
-    upper_bound = 1.4
+    upper_bound = 1/np.log(1 + days)
     mid_bound = upper_bound / 3
 
     for t in range(1, len(returns)):
-        if np.isnan(vola[t]):
+        if np.isnan(vola[t]) or np.isnan(returns[t]):
+            tertiary.append(None)
+        elif returns[t] > mid_bound * vola[t]:
+            tertiary.append(1)
+        elif -mid_bound * vola[t] < returns[t] <= mid_bound * vola[t]:
+            tertiary.append(0)
+        elif returns[t] <= -mid_bound * vola[t]:
+            tertiary.append(-1)
+        else:
+            raise ValueError("Invalid range for return: {}".format(returns[t]))
+
+    return pd.Series(tertiary, index=data.index)
+
+
+def gen_multinomial_response(data: pd.DataFrame, returns, vola, days):
+    multinomial = [None]
+
+    upper_bound = 1/np.log(1 + days)
+    mid_bound = upper_bound / 3
+
+    for t in range(1, len(returns)):
+        if np.isnan(vola[t]) or np.isnan(returns[t]):
             multinomial.append(None)
         elif returns[t] > upper_bound * vola[t]:
             multinomial.append(2)
@@ -282,58 +329,107 @@ def gen_multinomial_response(data: pd.DataFrame, returns, vola):
     return pd.Series(multinomial, index=data.index)
 
 
+def gen_buy_sell_signals(asset, window_size=300, ema_fast="EMA_50", ema_slow="EMA_200"):
+    signals = pd.Series(data=[0] * len(asset.data), index=asset.data.index)
+    sell_signals = pd.Series(data=[np.nan] * len(asset.data), index=asset.data.index)
+    buy_signals = pd.Series(data=[np.nan] * len(asset.data), index=asset.data.index)
+
+    BUY = 1
+    SELL = -1
+
+    for i in range(len(asset.data) - window_size, -1, -window_size):
+        min_value = None
+        max_value = None
+        min_date = None
+        max_date = None
+        for j in range(i, i + window_size):
+            if (min_value is None or asset.data["Close"].iloc[j] < min_value) and \
+                    asset.data["Close"].iloc[j] < asset.data[ema_slow].iloc[j] and \
+                    asset.data["Close"].iloc[j] < asset.data[ema_fast].iloc[j]:
+                min_value = asset.data["Close"].iloc[j]
+                min_date = asset.data.index[j]
+            if (max_value is None or asset.data["Close"].iloc[j] > max_value) and \
+                    asset.data["Close"].iloc[j] > asset.data[ema_slow].iloc[j] and \
+                    asset.data["Close"].iloc[j] > asset.data[ema_fast].iloc[j]:
+                max_value = asset.data["Close"].iloc[j]
+                max_date = asset.data.index[j]
+        if min_date is not None:
+            signals[min_date] = BUY
+            buy_signals[min_date] = min_value
+        if max_value is not None:
+            signals[max_date] = SELL
+            sell_signals[max_date] = max_value
+
+    last_signal = None
+    last_signal_date = None
+    for i in range(len(signals)):
+        if signals.iloc[i] != 0:
+            if last_signal is not None:
+                if last_signal == signals.iloc[i]:
+                    signals[last_signal_date] = 0
+                    buy_signals[last_signal_date] = None
+                    sell_signals[last_signal_date] = None
+
+            last_signal = signals.iloc[i]
+            last_signal_date = signals.index[i]
+
+    return signals, buy_signals, sell_signals
+
+
+def col_postfix(col):
+    if col[:4] == "EMA_":
+        return "_E" + col[4:]
+    return ""
+
+
 def gen_indicators(asset):
     # Generate EMA indicator
     Log.info("Generating EMA...")
-    EMA_5 = gen_EMA(asset.data["Close"], n=5)
-    EMA_10 = gen_EMA(asset.data["Close"], n=10)
-    EMA_20 = gen_EMA(asset.data["Close"], n=20)
-    EMA_50 = gen_EMA(asset.data["Close"], n=50)
-    asset.append("EMA_5", EMA_5)
-    asset.append("EMA_10", EMA_10)
-    asset.append("EMA_20", EMA_20)
-    asset.append("EMA_50", EMA_50)
+    for days in [5, 10, 20, 25, 50, 100, 150, 200]:
+        EMA = gen_EMA(asset.data["Close"], n=days)
+        asset.append("EMA_" + str(days), EMA)
+
+    # Generate Buy/Sell signals
+    Log.info("Generating Buy/Sell signals...")
+    for days in [50, 100, 200, 300]:
+        signal, buy_signal, sell_signal = gen_buy_sell_signals(asset, window_size=days)
+        asset.append("Signal_" + str(days), signal)
+        asset.append("Buy_signal_" + str(days), buy_signal)
+        asset.append("Sell_signal_" + str(days), sell_signal)
 
     # Generate RSI indicator
     Log.info("Generating RSI...")
-    RSI_10 = gen_RSI(asset.data["Close"], n=10)
-    RSI_20 = gen_RSI(asset.data["Close"], n=20)
-    RSI_50 = gen_RSI(asset.data["Close"], n=50)
-    asset.append("RSI_10", RSI_10)
-    asset.append("RSI_20", RSI_20)
-    asset.append("RSI_50", RSI_50)
+    for days, source in itertools.product([14, 28, 50], ["Close", "EMA_5"]):
+        RSI = gen_RSI(asset.data[source], n=days)
+        asset.append("RSI_" + str(days) + col_postfix(source), RSI)
 
     # Generate Stochastics K%D indicator
     Log.info("Generating Stochastics K%D...")
-    Stochastics_K_14, Stochastics_D_fast, Stochastics_D_slow = \
-        gen_Stochastics(asset.data["Close"], K_n=14)
-    asset.append("Stochastics_K_14", Stochastics_K_14)
-    asset.append("Stochastics_D_fast", Stochastics_D_fast)
-    asset.append("Stochastics_D_slow", Stochastics_D_slow)
+    for ((K, D, D2), source) in itertools.product([(5, 5, 3)], ["Close", "EMA_5"]):
+        STOCH_K, STOCH_D, STOCH_D2 = \
+            gen_Stochastics(asset.data[source], K_n=K, D=D, D2=D2)
+        asset.append("STOCH_K" + col_postfix(source), STOCH_K)
+        asset.append("STOCH_D_fast" + col_postfix(source), STOCH_D)
+        asset.append("STOCH_D_slow" + col_postfix(source), STOCH_D2)
 
     # Generate MACD indicator
-    Log.info("Generating MACD...")
-    MACD, MACD_Signal = gen_MACD(asset.data["Close"])
-    asset.append("MACD(12,26,9)", MACD)
-    asset.append("MACD_Signal(12,26,9)", MACD_Signal)
+    Log.info("Generating ATR...")
+    for source in ["Close", "EMA_5"]:
+        MACD, MACD_Signal = gen_MACD(asset.data[source])
+        asset.append("MACD" + col_postfix(source), MACD)
+        asset.append("MACD_Signal" + col_postfix(source), MACD_Signal)
 
     # Generate CCI indicator
     Log.info("Generating CCI...")
-    CCI_10 = gen_CCI(asset.data, n=10)
-    CCI_20 = gen_CCI(asset.data, n=20)
-    CCI_50 = gen_CCI(asset.data, n=50)
-    asset.append("CCI_10", CCI_10)
-    asset.append("CCI_20", CCI_20)
-    asset.append("CCI_50", CCI_50)
+    for days in [10, 20, 50]:
+        CCI = gen_CCI(asset.data, n=days)
+        asset.append("CCI_" + str(days), CCI)
 
     # Generate ATR indicator
     Log.info("Generating ATR...")
-    ATR_10 = gen_ATR(asset.data, n=10)
-    ATR_20 = gen_ATR(asset.data, n=20)
-    ATR_50 = gen_ATR(asset.data, n=50)
-    asset.append("ATR_10", ATR_10)
-    asset.append("ATR_20", ATR_20)
-    asset.append("ATR_50", ATR_50)
+    for days in [10, 20, 50]:
+        ATR = gen_ATR(asset.data, n=days)
+        asset.append("ATR_" + str(days), ATR)
 
     # Generate ADL indicator
     Log.info("Generating ADL...")
@@ -342,53 +438,50 @@ def gen_indicators(asset):
 
     # Generate returns
     Log.info("Generating returns...")
-    returns, log_returns, ann_log_returns, mon_log_returns, qu_log_return, yearly_log_returns = \
-        gen_returns(asset.data)
-
-    asset.append("returns", returns)
-    asset.append("log_returns", log_returns)
-    asset.append("ann_log_returns", ann_log_returns)
-    asset.append("monthly_log_returns", mon_log_returns)
-    asset.append("quarterly_log_returns", qu_log_return)
-    asset.append("yearly_log_returns", yearly_log_returns)
+    for days in [1, 5, 20, 30, 60, 90]:
+        returns_d, log_returns_d, ann_log_returns_d, = gen_returns2(asset.data, delta=days)
+        asset.append("returns_" + str(days), returns_d)
+        asset.append("log_returns_" + str(days), log_returns_d)
+        asset.append("ann_log_returns_" + str(days), ann_log_returns_d)
 
     # Generate simple volatility
     Log.info("Generating simple volatility...")
-    vola_10, ann_vola_10 = gen_SimpleVola(asset.data["Close"], days=10)
-    vola_20, ann_vola_20 = gen_SimpleVola(asset.data["Close"], days=20)
-    asset.append("vola_10", vola_10)
-    asset.append("ann_vola_10", ann_vola_10)
-    asset.append("vola_20", vola_20)
-    asset.append("ann_vola_20", ann_vola_20)
+    for days in [1, 5, 20, 30, 60, 90]:
+        vola, ann_vola = gen_SimpleVola(asset.data["Close"], days=days)
+        asset.append("vola_" + str(days), vola)
+        asset.append("ann_vola_" + str(days), ann_vola)
 
     # Generate EWMA volatility
     Log.info("Generating EWMA volatility...")
-    EWMA_ann_vola_10 = gen_EWMA_Vola(asset.data["Close"], n=10)
-    EWMA_ann_vola_20 = gen_EWMA_Vola(asset.data["Close"], n=20)
-    asset.append("EWMA_ann_vola_10", EWMA_ann_vola_10)
-    asset.append("EWMA_ann_vola_20", EWMA_ann_vola_20)
+    for days in [1, 5, 20, 30, 60, 90]:
+        EWMA_ann_vola = gen_EWMA_Vola(asset.data["Close"], n=max(days, 5))
+        asset.append("EWMA_ann_vola_" + str(days), EWMA_ann_vola)
+        tertiary_EWMA = gen_tertiary_response(asset.data,
+                                              asset.data["ann_log_returns_" + str(days)],
+                                              EWMA_ann_vola, days)
+        asset.append("tertiary_EWMA_" + str(days), tertiary_EWMA)
+        multinomial_EWMA = gen_multinomial_response(asset.data,
+                                                    asset.data["ann_log_returns_" + str(days)],
+                                                    EWMA_ann_vola, days)
+        asset.append("multinomial_EWMA_" + str(days), multinomial_EWMA)
 
     # Generate Yang & Zhang volatility
     Log.info("Generating Yang & Zhang volatility...")
-    YZ_vola_10 = gen_YZ_Vola(asset.data, days=10)
-    YZ_vola_20 = gen_YZ_Vola(asset.data, days=20)
-    asset.append("YZ_Vola_10", YZ_vola_10)
-    asset.append("YZ_Vola_20", YZ_vola_20)
+    for days in [1, 5, 20, 30, 60, 90]:
+        YZ_vola = gen_YZ_Vola(asset.data, days=max(days, 5))
+        asset.append("YZ_Vola_" + str(days), YZ_vola)
+        tertiary_YZ = gen_tertiary_response(asset.data,
+                                            asset.data["ann_log_returns_" + str(days)],
+                                            YZ_vola, days)
+        asset.append("tertiary_YZ_" + str(days), tertiary_YZ)
+        multinomial_YZ = gen_multinomial_response(asset.data,
+                                                  asset.data["ann_log_returns_" + str(days)],
+                                                  YZ_vola, days)
+        asset.append("multinomial_YZ_" + str(days), multinomial_YZ)
 
-    # Generate binary and multinomial response variables
-    Log.info("Generating response variables...")
-    binary = gen_binary_response(asset.data, ann_log_returns)
-    multinomial_YZ_10 = gen_multinomial_response(asset.data, ann_log_returns, YZ_vola_10)
-    multinomial_EWMA_10 = gen_multinomial_response(asset.data, ann_log_returns, EWMA_ann_vola_10)
-    multinomial_YZ_20 = gen_multinomial_response(asset.data, ann_log_returns, YZ_vola_20)
-    multinomial_EWMA_20 = gen_multinomial_response(asset.data, ann_log_returns, EWMA_ann_vola_20)
-
-    asset.append("binary", binary)
-    asset.append("multinomial_YZ_10", multinomial_YZ_10)
-    asset.append("multinomial_YZ_20", multinomial_YZ_20)
-    asset.append("multinomial_EWMA_10", multinomial_EWMA_10)
-    asset.append("multinomial_EWMA_20", multinomial_EWMA_20)
+    # Generate binary response variables
+    for days in [1, 5, 20, 30, 60, 90]:
+        binary = gen_binary_response(asset.data, asset.data["ann_log_returns_" + str(days)])
+        asset.append("binary_" + str(days), binary)
 
     return asset
-
-

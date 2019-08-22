@@ -2,11 +2,12 @@ import argparse
 import os
 import fnmatch
 import itertools
+import sys
+sys.path.append("../prediction")
 
 from asset import Asset
 from config import config, Configuration
 from log import Log
-from models import fit_models
 
 # Argument parsing
 parser = argparse.ArgumentParser(prog="find_uncorrelated",
