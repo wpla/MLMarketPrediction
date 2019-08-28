@@ -12,7 +12,7 @@ from sklearn.model_selection import train_test_split
 
 from config import config
 from log import Log
-from models import make_data_multicol, split_data, create_input_data, make_input_col, make_response_col, \
+from models import make_data, split_data, create_input_data, make_input_col, make_response_col, \
     create_response_data
 
 output_path_ = None
@@ -247,7 +247,7 @@ def fit_LSTM_model_signal(asset, response_var, input_vars, window_size, model_la
     asset = create_response_data(asset, response_var)
 
     # Make response variable y and input matrix X
-    y, X = make_data_multicol(asset, response_col, input_cols, window_size, config().days())
+    y, X = make_data(asset, response_col, input_cols, window_size, config().days())
 
     # Convert X to numpy array
     X = np.array([x_i.values for x_i in X])

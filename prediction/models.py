@@ -2,6 +2,7 @@ import itertools
 import os
 
 import pandas as pd
+import pycm
 import sklearn
 from sklearn import svm
 from sklearn import tree
@@ -20,26 +21,7 @@ from config import config
 from log import Log
 
 
-def make_data(asset, response_col, input_col, window_size=10, days=5000):
-    y = []  # endogenous variable
-    X = []  # Matrix of exogenous variables
-
-    response_var = asset.data[response_col]
-    input_vars = asset.data[input_col]
-    input_len = len(asset.data[input_col])
-
-    for t in range(input_len - 1, max([input_len - days, 0]), -(window_size + 1)):
-        y_t = response_var[t]
-        X_t = input_vars[t - window_size:t]
-
-        if not X_t.isna().any() and not pd.isna(y_t) and len(X_t) == window_size:
-            y.append(y_t)
-            X.append(X_t)
-
-    return y, X
-
-
-def make_data_multicol(asset, response_col, input_cols, window_size=10, days=5000):
+def make_data(asset, response_col, input_cols, window_size=10, days=None, flatten=False):
     y = []  # Response variable
     X = []  # Matrix of input variables
 
@@ -47,32 +29,40 @@ def make_data_multicol(asset, response_col, input_cols, window_size=10, days=500
     input_vars = asset.data[input_cols]
     input_len = len(asset.data[input_cols])
 
-    for t in range(input_len - 1, max([input_len - days, 0]), -(window_size + 1)):
-        y_t = response_var[t]
+    if days is None:
+        start = 0
+    else:
+        start = max([input_len - days, 0])
+
+    for t in range(start, input_len, window_size):
+        y_t = response_var[t - 1]
         X_t = input_vars[t - window_size:t]
 
         if not X_t.isna().any().any() and not pd.isna(y_t) and len(X_t) == window_size:
             y.append(y_t)
-            X.append(X_t)
+            if not flatten:
+                X.append(X_t)
+            else:
+                X.append(X_t.values.flatten())
 
     return y, X
 
 
 def split_data(X, y, test_factor=0.2):
-    # Use the first 20% of the time series as test data.
-    # The first elements contains the newer data.
+    # Use the last 20% of the time series as test data.
+    # The first elements contains the older data.
     test_len = int(len(X) * test_factor)
-    X_test = X[:test_len]
-    y_test = y[:test_len]
-    X_train = X[test_len:]
-    y_train = y[test_len:]
+    X_test = X[-test_len:]
+    y_test = y[-test_len:]
+    X_train = X[:-test_len]
+    y_train = y[:-test_len]
     return X_train, X_test, y_train, y_test
 
 
 def make_response_col(response_var, response_param=None):
     if response_param is None:
         return response_var
-    elif response_var in ['multinomial_YZ', 'multinomial_EWMA']:
+    elif response_var in ['binary', 'tertiary_YZ', 'tertiary_EWMA', 'multinomial_YZ', 'multinomial_EWMA']:
         return response_var + "_" + str(response_param)
     return response_var
 
@@ -117,8 +107,8 @@ def create_input_data(asset, input_var, input_param=None):
             EMA = indicators.gen_EMA(asset.data["Close"], n=input_param)
             asset.append(input_col, EMA)
             Log.info("%s created", input_col)
-        elif input_var == "Stochastic" and input_param is not None:
-            K, _, D = indicators.gen_Stochastics(asset.data["Close"], K=input_param)
+        elif input_var == "STOCH" and input_param is not None:
+            K, _, D = indicators.gen_Stochastics(asset.data["Close"], K_n=input_param)
             asset.append(input_col, K)
             asset.append(input_col + "_D", D)
             Log.info("%s created", input_col)
@@ -145,17 +135,38 @@ def create_input_data(asset, input_var, input_param=None):
     return asset
 
 
-def fit_cross_validation(asset,
-                         model_name,
-                         create_clf=None,
-                         model_params=None,
-                         use_scaler=False,
-                         response_vars=None,
-                         response_params=None,
-                         input_vars=None,
-                         input_params=None,
-                         window_sizes=None,
-                         use_test_train_split=False):
+def score_model(clf, X, y, split_factor=0.2):
+    n = len(X)
+    test_len = int(n * split_factor)
+
+    y_real = []
+    y_pred = []
+    y_proba = []
+
+    for i in range(test_len, 0, -1):
+        X_train = X[:-i]
+        y_train = y[:-i]
+        clf.fit(X_train, y_train)
+
+        y_pred_t = clf.predict([X[n - i]])[0]
+        y_proba_t = clf.predict_proba([X[n - i]])[0]
+
+        y_real.append(y[n - i])
+        y_pred.append(y_pred_t)
+        y_proba.append(y_proba_t)
+
+    return pycm.ConfusionMatrix(y_real, y_pred)
+
+
+def fit_model(asset,
+              model_name,
+              create_func=None,
+              model_params=None,
+              use_scaler=False,
+              response_vars=None,
+              response_params=None,
+              input_vars_list=None,
+              window_sizes=None):
     Log.info("== Fitting model %s for %s", model_name, asset.symbol)
 
     model_scores = {}
@@ -165,109 +176,58 @@ def fit_cross_validation(asset,
 
     outfile = open(os.path.join(config().output_path(), model_name + "_" + asset.symbol + ".csv"), "w")
     outfile.write("asset;model;response_var;response_param;input_var;input_param;window_size;model_param;"
-                  "n_train;n_test;cv_score_mean;cv_score_std;test_score\n")
+                  "n_train;n_test;Overall_MCC;test_score\n")
 
-    for (response_var, input_var, window_size, model_param) in itertools.product(
-            response_vars, input_vars, window_sizes, model_params):
+    for (response_var, input_vars, window_size, model_param) in itertools.product(
+            response_vars, input_vars_list, window_sizes, model_params):
 
         if response_var in response_params:
             response_params_ = response_params[response_var]
         else:
             response_params_ = [None]
 
-        if input_var in input_params:
-            input_params_ = input_params[input_var]
-        else:
-            input_params_ = [None]
-
         for response_param in response_params_:
-            for input_param in input_params_:
+            Log.info("Fitting %s for response_var=%s, respone_param=%s, input_var=%s, "
+                     "window_size=%s, model_param=%s", model_name, response_var, str(response_param), str(input_vars),
+                     str(window_size), str(model_param))
 
-                Log.info("Fitting %s for response_var=%s, respone_param=%s, input_var=%s, input_param=%s, "
-                         "window_size=%s, model_param=%s", model_name, response_var, str(response_param), input_var,
-                         str(input_param), str(window_size), str(model_param))
+            # Create data
+            # asset = create_response_data(asset, response_var, response_param)
+            # asset = create_input_data(asset, input_var, input_param)
+            response_col = make_response_col(response_var, response_param)
+            # input_col = make_input_col(input_var, input_param)
 
-                # Create data
-                asset = create_response_data(asset, response_var, response_param)
-                asset = create_input_data(asset, input_var, input_param)
-                response_col = make_response_col(response_var, response_param)
-                input_col = make_input_col(input_var, input_param)
+            # Create test and training data
+            y, X = make_data(asset, response_col=response_col, input_cols=input_vars, window_size=window_size,
+                             days=config().days(), flatten=True)
 
-                # Create test and training data
-                y, X = make_data(asset, response_col=response_col, input_col=input_col, window_size=window_size,
-                                 days=config().days())
+            X_train, X_test, y_train, y_test = split_data(X, y)
 
-                # Split data into training and test data
-                if use_test_train_split:
-                    X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(X, y, random_state=42)
-                else:
-                    X_train, X_test, y_train, y_test = split_data(X, y)
+            Log.info("n_train: X: %d, y: %d", len(X_train), len(y_train))
+            Log.info("n_test: X: %d, y: %d", len(X_test), len(y_test))
 
-                Log.info("n_train: X: %d, y: %d", len(X_train), len(y_train))
-                Log.info("n_test: X: %d, y: %d", len(X_test), len(y_test))
+            if use_scaler:
+                scaler = StandardScaler()
+                scaler.fit(X_train)
+                X_train = scaler.transform(X_train)
+                X_test = scaler.transform(X_test)
 
-                if use_scaler:
-                    scaler = StandardScaler()
-                    scaler.fit(X_train)
-                    X_train = scaler.transform(X_train)
-                    X_test = scaler.transform(X_test)
+            clf = create_func(model_param)
+            scores = score_model(clf, X_train, y_train)
+            Log.info("Model overall MCC: %0.2f" % scores.Overall_MCC)
 
-                clf = create_clf(model_param)
-                scores = cross_val_score(clf, X_train, y_train, cv=5)
-                Log.info("Model accuracy: %0.2f (+/- %0.2f)" % (scores.mean(), scores.std() * 2))
-
-                clf2 = create_clf(model_param)
-                clf2.fit(X_train, y_train)
-                test_score = clf2.score(X_test, y_test)
-                Log.info("Model test accuracy: %0.2f" % test_score)
-
-                # Write results to file
-                outfile.write("%s;%s Training;%s;%s;%s;%s;%s;%s;"
-                              "%d;%d;"
-                              "%.4f;%.4f;%.4f\n" % (asset.symbol, model_name,
-                                                    response_var, response_param,
-                                                    input_var,
-                                                    input_param,
-                                                    str(window_size),
-                                                    str(model_param),
-                                                    len(X_train), len(X_test),
-                                                    scores.mean(), scores.std(),
-                                                    test_score))
-
-                # Store parameters and accuracy
-                model_scores[(response_var, response_param, input_var, input_param, window_size, str(model_param))] = (
-                    scores.mean(), scores.std(), test_score)
-
-    # Search for model with best score
-    best_cv_score = None
-    best_cv_score_std = None
-    test_score = None
-    best_params = None
-    for p in model_scores.keys():
-        score_mean, score_std, test_score_ = model_scores[p]
-        if best_cv_score is None or best_cv_score < score_mean:
-            best_cv_score = score_mean
-            best_cv_score_std = score_std
-            test_score = test_score_
-            best_params = p
-
-    # Output winner model
-    if best_cv_score is not None:
-        Log.info("== Best model ==")
-        response_var, response_param, input_var, input_param, window_size, model_param_str = best_params
-        Log.info("Parameter: response_var=%s, respone_param=%s, input_var=%s, input_param=%s, window_size=%s, "
-                 "model_param=%s", response_var, str(response_param), input_var, str(input_param), str(window_size),
-                 model_param_str)
-        Log.info("Cross validation accuracy: %0.2f (+/- %0.2f)" % (best_cv_score, best_cv_score_std))
-        Log.info("Test accuracy: %0.2f " % test_score)
-
-        # Write winner to file
-        outfile.write("%s;Winner %s;%s;%s;%s;%s;%s;%s;%.4f;%.4f;%.4f\n" % (
-            asset.symbol, model_name, response_var, response_param, input_var, input_param, str(window_size),
-            model_param_str,
-            best_cv_score, best_cv_score_std, test_score))
-    else:
-        Log.warn("No best model found")
+            # Write results to file
+            outfile.write("%s;%s;%s;%s;%s;%s;%s;"
+                          "%d;%d;"
+                          "%.4f;%.4f\n" % (asset.symbol, model_name,
+                                           response_var, response_param,
+                                           str(input_vars),
+                                           str(window_size),
+                                           str(model_param),
+                                           len(X_train), len(X_test),
+                                           scores.Overall_MCC,
+                                           0.0))
+            outfile.flush()
     outfile.close()
 
 
@@ -304,29 +264,6 @@ def print_result_table(results):
             file.write("\\end{tabular}\n")
             file.write("\\end{center}\n")
             file.write("\\end{table}\n\n")
-
-
-def fit_models(asset):
-    results = {}
-    for col in ["ann_log_returns", "RSI_10", "Stochastics_K_10",
-                "MACD(12,26,9)", "MACD_Signal(12,26,9)",
-                "CCI_10", "ATR_10", "ADL"]:
-        Log.info("Selecting column: %s", col)
-        for window_size in [1, 5, 10, 15, 21]:
-            results = fit_binary_logistic_regression(asset, "binary", col, window_size, results)
-            results = fit_multinomial_logistic_regression(asset, "multinomial_EWMA", col, window_size, results)
-            results = fit_multinomial_logistic_regression(asset, "multinomial_YZ", col, window_size, results)
-
-            results = fit_naive_bayes(asset, "multinomial_YZ", col, window_size, results)
-            results = fit_multinomial_naive_bayes(asset, "multinomial_YZ", col, window_size, results)
-            results = fit_support_vector_machines(asset, "multinomial_YZ", col, window_size, results)
-            results = fit_KNN(asset, "multinomial_YZ", col, window_size, results)
-            results = fit_decision_trees(asset, "multinomial_YZ", col, window_size, results)
-            results = fit_adaboost(asset, "multinomial_YZ", col, window_size, results)
-            results = fit_bagging_logistic_regression(asset, "multinomial_YZ", col, window_size, results)
-            results = fit_ANN(asset, "multinomial_YZ", col, window_size, results)
-
-    print_result_table(results)
 
 
 def create_linear_regression(model_param):
@@ -405,24 +342,142 @@ def create_MLP_regressor(model_param):
     return MLPRegressor(**model_param)
 
 
-def fit_models_crossvalidated(asset):
-    response_params = {'multinomial_YZ': [10, 20],
-                       'multinomial_EWMA': [10, 20]
-                       }
-    input_vars = ["Close", "EMA", "returns", "log_returns", "ann_log_returns",
-                  "RSI", "Stochastic", "MACD", "CCI", "ATR", "ADL"]
-    input_params = {"EMA": [5, 10, 20, 50],
-                    "RSI": [5, 10, 20, 50],
-                    "Stochastic": [5, 10, 20, 50],
-                    "MACD": [5, 10, 20, 50],
-                    "CCI": [5, 10, 20, 50],
-                    "ATR": [5, 10, 20, 50]
-                    }
+def fit_classifiers(asset, classifiers):
+    response_params = {"binary": [1, 5, 20, 30, 60, 90],
+                       "tertiary_YZ": [1, 5, 20, 30, 60, 90],
+                       "multinomial_YZ": [1, 5, 20, 30, 60, 90],
+                       "multinomial_EWMA": [1, 5, 20, 30, 60, 90]}
+    input_vars_list = [['Close'],
+                       ['EMA'],
+                       ['returns'],
+                       ['log_returns'],
+                       ["RSI"],
+                       ["STOCH_K"],
+                       ["MACD"],
+                       ["CCI"],
+                       ["ATR"],
+                       ["ADL"],
+                       ["EMA", "RSI"],
+                       ["EMA", "RSI", "STOCH_K"],
+                       ["EMA", "RSI", "MACD"],
+                       ["EMA", "RSI", "CCI"],
+                       ["EMA", "RSI", "ATR"],
+                       ]
     window_sizes = [1, 5, 10, 15, 21]
 
-    response_params = {"binary": [1, 5, 20, 30, 60, 90],
-                       "multinomial_YZ": [1, 5, 20, 30, 60, 90],
-                       "tertiary_YZ": [1, 5, 20, 30, 60, 90]}
+    # Logistic Regression
+    if "logreg" in classifiers:
+        models = {'LogReg-bin': ['binary'],
+                  'LogReg-tert': ['tertiary_YZ'],
+                  'LogReg-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+        model_params = [{'penalty': 'l2', 'solver': 'lbfgs', 'max_iter': 10000}]
+        for model_name, response_vars in models.items():
+            fit_model(asset, model_name, create_func=create_binary_logistic_regression, use_scaler=False,
+                      model_params=model_params, response_vars=response_vars, response_params=response_params,
+                      input_vars_list=input_vars_list, window_sizes=window_sizes)
+
+    # Gaussian Naive Bayes
+    if "nb" in classifiers:
+        models = {'NaiveBayes-bin': ['binary'],
+                  'NaiveBayes-tert': ['tertiary_YZ'],
+                  'NaiveBayes-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+        model_params = [{}]
+        for model_name, response_vars in models.items():
+            fit_model(asset, model_name, create_func=create_gaussian_naive_bayes, use_scaler=False,
+                      model_params=model_params, response_vars=response_vars, response_params=response_params,
+                      input_vars_list=input_vars_list, window_sizes=window_sizes)
+
+    # Decision Trees
+    if "dt" in classifiers:
+        models = {'DT-bin': ['binary'],
+                  'DT-tert': ['tertiary_YZ'],
+                  'DT-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+        model_params = [{'criterion': 'gini'},
+                        {'criterion': 'entropy'}]
+        for model_name, response_vars in models.items():
+            fit_model(asset, model_name, create_func=create_decision_tree, use_scaler=False,
+                      model_params=model_params, response_vars=response_vars, response_params=response_params,
+                      input_vars_list=input_vars_list, window_sizes=window_sizes)
+
+    # Bagging Decision Trees
+    if "bdt" in classifiers:
+        models = {'BaggingDT-bin': ['binary'],
+                  'BaggingDT-tert': ['tertiary_YZ'],
+                  'BaggingDT-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+        model_params = [{'n_estimators': 10},
+                        {'n_estimators': 100},
+                        {'n_estimators': 300}]
+        for model_name, response_vars in models.items():
+            fit_model(asset, model_name, create_func=create_bagging_dt, use_scaler=False,
+                      model_params=model_params, response_vars=response_vars, response_params=response_params,
+                      input_vars_list=input_vars_list, window_sizes=window_sizes)
+
+    # Random Forst Classifier
+    if "rf" in classifiers:
+        models = {'RF-bin': ['binary'],
+                  'RF-tert': ['tertiary_YZ'],
+                  'RF-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+        model_params = [{'n_estimators': 10},
+                        {'n_estimators': 100},
+                        {'n_estimators': 300}]
+        for model_name, response_vars in models.items():
+            fit_model(asset, model_name, create_func=create_random_forest, use_scaler=False,
+                      model_params=model_params, response_vars=response_vars, response_params=response_params,
+                      input_vars_list=input_vars_list, window_sizes=window_sizes)
+
+    # AdaBoost
+    if "adaboost" in classifiers:
+        models = {'AdaBoost-bin': ['binary'],
+                  'AdaBoost-tert': ['tertiary_YZ'],
+                  'AdaBoost-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+        model_params = [{'n_estimators': 10},
+                        {'n_estimators': 100},
+                        {'n_estimators': 300}]
+        for model_name, response_vars in models.items():
+            fit_model(asset, model_name, create_func=create_adaboost, use_scaler=False,
+                      model_params=model_params, response_vars=response_vars, response_params=response_params,
+                      input_vars_list=input_vars_list, window_sizes=window_sizes)
+
+    # SVM
+    if "svm" in classifiers:
+        models = {'SVM-bin': ['binary'],
+                  'SVM-tert': ['tertiary_YZ'],
+                  'SVM-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+        model_params = [{'kernel': 'rbf', 'decision_function_shape': 'ovo', 'gamma': 'auto'},
+                        {'kernel': 'sigmoid', 'decision_function_shape': 'ovo', 'gamma': 'auto'}]
+        for model_name, response_vars in models.items():
+            fit_model(asset, model_name, create_func=create_SVM, use_scaler=False,
+                      model_params=model_params, response_vars=response_vars, response_params=response_params,
+                      input_vars_list=input_vars_list, window_sizes=window_sizes)
+
+    # KNN
+    if "knn" in classifiers:
+        models = {'KNN-bin': ['binary'],
+                  'KNN-tert': ['tertiary_YZ'],
+                  'KNN-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+        model_params = [{'n_neighbors': 5},
+                        {'n_neighbors': 10}]
+        for model_name, response_vars in models.items():
+            fit_model(asset, model_name, create_func=create_KNN, use_scaler=False,
+                      model_params=model_params, response_vars=response_vars, response_params=response_params,
+                      input_vars_list=input_vars_list, window_sizes=window_sizes)
+
+    # ANN Binomial
+    if "nn" in classifiers:
+        models = {'ANN-bin': ['binary'],
+                  'ANN-tert': ['tertiary_YZ'],
+                  'ANN-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+        model_params = [{'solver': 'lbfgs', 'hidden_layer_sizes': (10)},
+                        {'solver': 'lbfgs', 'hidden_layer_sizes': (10, 3)},
+                        {'solver': 'lbfgs', 'hidden_layer_sizes': (50, 10, 3)},
+                        {'solver': 'lbfgs', 'hidden_layer_sizes': (100, 20, 3)}]
+        for model_name, response_vars in models.items():
+            fit_model(asset, model_name, create_func=create_MLP, use_scaler=True,
+                      model_params=model_params, response_vars=response_vars, response_params=response_params,
+                      input_vars_list=input_vars_list, window_sizes=window_sizes)
+
+
+def fit_regressors(asset, regressors):
     input_vars_list = [('Close',),
                        ('EMA',),
                        ('returns',),
@@ -434,7 +489,7 @@ def fit_models_crossvalidated(asset):
                        ("ATR",),
                        ("ADL",),
                        ("EMA", "RSI"),
-                       ("EMA", "RSI", "Stochastic"),
+                       ("EMA", "RSI", "STOCH_K"),
                        ("EMA", "RSI", "MACD"),
                        ("EMA", "RSI", "CCI"),
                        ("EMA", "RSI", "ATR"),
@@ -442,381 +497,76 @@ def fit_models_crossvalidated(asset):
     window_sizes = [1, 5, 10, 15, 21]
 
     # Linear Regression
-    response_vars = ['log_returns']
-    model_params = [{}]
-    fit_cross_validation(asset, "LinRegr", create_clf=create_linear_regression, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Binary Logistic Regression
-    response_vars = ['binary']
-    model_params = [{'penalty': 'l2', 'solver': 'lbfgs', 'max_iter': 10000}]
-    fit_cross_validation(asset, "BinLogRegr", create_clf=create_binary_logistic_regression, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Multinomial Logistic Regression
-    response_vars = ['multinomial_YZ', 'multinomial_EWMA']
-    model_params = [{'solver': 'lbfgs', 'max_iter': 10000}]
-    fit_cross_validation(asset, "MultiLogRegr", create_clf=create_multinomial_logistic_regression, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Gaussian Naive Bayes
-    response_vars = ['binary']
-    model_params = [{}]
-    fit_cross_validation(asset, "GaussNBBin", create_clf=create_gaussian_naive_bayes, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Gaussian Naive Bayes
-    response_vars = ['multinomial_YZ', 'multinomial_EWMA']
-    model_params = [{}]
-    fit_cross_validation(asset, "GaussNBMulti", create_clf=create_gaussian_naive_bayes, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Gaussian Naive Bayes Regressor
-    # response_vars = ['log_returns']
-    # model_params = [{}]
-    # fit_cross_validation(asset, "GaussNBRegr", create_clf=create_gaussian_naive_bayes, use_scaler=False,
-    #                      model_params=model_params, response_vars=response_vars, response_params=response_params,
-    #                      input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Multinomial Naive Bayes
-    # response_vars = ['multinomial_YZ']
-    # model_params = [{}]
-    # fit_cross_validation(asset, "Multi_NB", create_clf=create_multinomial_naive_bayes, use_scaler=False,
-    #                      model_params=model_params, response_vars=response_vars, response_params=response_params,
-    #                      input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Decision Trees
-    response_vars = ['multinomial_YZ', 'multinomial_EWMA']
-    model_params = [{'criterion': 'gini'},
-                    {'criterion': 'entropy'}]
-    fit_cross_validation(asset, "DT", create_clf=create_decision_tree, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
+    if "linreg" in regressors:
+        response_vars = ['log_returns']
+        model_params = [{}]
+        fit_model(asset, "LinRegr", create_func=create_linear_regression, use_scaler=False,
+                  model_params=model_params, response_vars=response_vars,
+                  input_vars_list=input_vars_list, window_sizes=window_sizes)
 
     # Decision Tree Regressor
-    response_vars = ['log_returns']
-    model_params = [{'max_depth': 10},
-                    {'max_depth': 30}]
-    fit_cross_validation(asset, "DTRegr", create_clf=create_decision_tree_regressor, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Bagging Decision Trees
-    response_vars = ['multinomial_YZ', 'multinomial_EWMA']
-    model_params = [{'n_estimators': 10},
-                    {'n_estimators': 100},
-                    {'n_estimators': 300}]
-    fit_cross_validation(asset, "BaggingDT", create_clf=create_bagging_dt, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
+    if "dt" in regressors:
+        response_vars = ['log_returns']
+        model_params = [{'max_depth': 10},
+                        {'max_depth': 30}]
+        fit_model(asset, "DTRegr", create_func=create_decision_tree_regressor, use_scaler=False,
+                  model_params=model_params, response_vars=response_vars,
+                  input_vars_list=input_vars_list, window_sizes=window_sizes)
 
     # Bagging Decision Trees Regressors
-    response_vars = ['log_returns']
-    model_params = [{'n_estimators': 10},
-                    {'n_estimators': 100},
-                    {'n_estimators': 300}]
-    fit_cross_validation(asset, "BaggingDTRegr", create_clf=create_bagging_dt_regressor, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Random Forst Classifier
-    response_vars = ['multinomial_YZ', 'multinomial_EWMA']
-    model_params = [{'n_estimators': 10},
-                    {'n_estimators': 100},
-                    {'n_estimators': 300}]
-    fit_cross_validation(asset, "RF", create_clf=create_random_forest, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
+    if "bdt" in regressors:
+        response_vars = ['log_returns']
+        model_params = [{'n_estimators': 10},
+                        {'n_estimators': 100},
+                        {'n_estimators': 300}]
+        fit_model(asset, "BaggingDTRegr", create_func=create_bagging_dt_regressor, use_scaler=False,
+                  model_params=model_params, response_vars=response_vars,
+                  input_vars_list=input_vars_list, window_sizes=window_sizes)
 
     # Random Forst Regressor
-    response_vars = ['log_returns']
-    model_params = [{'n_estimators': 10},
-                    {'n_estimators': 100},
-                    {'n_estimators': 300}]
-    fit_cross_validation(asset, "RFRegr", create_clf=create_random_forest_regressor, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # AdaBoost
-    response_vars = ['multinomial_YZ', 'multinomial_EWMA']
-    model_params = [{'n_estimators': 10},
-                    {'n_estimators': 100},
-                    {'n_estimators': 300}]
-    fit_cross_validation(asset, "AdaBoost", create_clf=create_adaboost, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
+    if "rf" in regressors:
+        response_vars = ['log_returns']
+        model_params = [{'n_estimators': 10},
+                        {'n_estimators': 100},
+                        {'n_estimators': 300}]
+        fit_model(asset, "RFRegr", create_func=create_random_forest_regressor, use_scaler=False,
+                  model_params=model_params, response_vars=response_vars,
+                  input_vars_list=input_vars_list, window_sizes=window_sizes)
 
     # AdaBoostRegressor
-    response_vars = ['log_returns']
-    model_params = [{'n_estimators': 10},
-                    {'n_estimators': 100},
-                    {'n_estimators': 300}]
-    fit_cross_validation(asset, "AdaBoostRegr", create_clf=create_adaboost_regressor, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # SVM
-    response_vars = ['binary']
-    model_params = [{'kernel': 'rbf', 'decision_function_shape': 'ovo', 'gamma': 'auto'},
-                    {'kernel': 'sigmoid', 'decision_function_shape': 'ovo', 'gamma': 'auto'}]
-    fit_cross_validation(asset, "SVMBin", create_clf=create_SVM, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # SVM
-    response_vars = ['multinomial_YZ', 'multinomial_EWMA']
-    model_params = [{'kernel': 'rbf', 'decision_function_shape': 'ovo', 'gamma': 'auto'},
-                    {'kernel': 'sigmoid', 'decision_function_shape': 'ovo', 'gamma': 'auto'}]
-    fit_cross_validation(asset, "SVMMulti", create_clf=create_SVM, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
+    if "adaboost" in regressors:
+        response_vars = ['log_returns']
+        model_params = [{'n_estimators': 10},
+                        {'n_estimators': 100},
+                        {'n_estimators': 300}]
+        fit_model(asset, "AdaBoostRegr", create_func=create_adaboost_regressor, use_scaler=False,
+                  model_params=model_params, response_vars=response_vars,
+                  input_vars_list=input_vars_list, window_sizes=window_sizes)
 
     # SVM Regressor
-    response_vars = ['log_returns']
-    model_params = [{'kernel': 'rbf', 'gamma': 'auto'}]
-    fit_cross_validation(asset, "SVMRegr", create_clf=create_SVM_regressor, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # KNN
-    response_vars = ['multinomial_YZ', 'multinomial_EWMA']
-    model_params = [{'n_neighbors': 5},
-                    {'n_neighbors': 10}]
-    fit_cross_validation(asset, "KNN", create_clf=create_KNN, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
+    if "svm" in regressors:
+        response_vars = ['log_returns']
+        model_params = [{'kernel': 'rbf', 'gamma': 'auto'}]
+        fit_model(asset, "SVMRegr", create_func=create_SVM_regressor, use_scaler=False,
+                  model_params=model_params, response_vars=response_vars,
+                  input_vars_list=input_vars_list, window_sizes=window_sizes)
 
     # KNN Regressor
-    response_vars = ['multinomial_YZ', 'multinomial_EWMA']
-    model_params = [{'n_neighbors': 5},
-                    {'n_neighbors': 10}]
-    fit_cross_validation(asset, "KNNRegr", create_clf=create_KNN_regressor, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # ANN Binomial
-    response_vars = ['binary']
-    model_params = [{'solver': 'lbfgs', 'hidden_layer_sizes': (10)},
-                    {'solver': 'lbfgs', 'hidden_layer_sizes': (10, 3)},
-                    {'solver': 'lbfgs', 'hidden_layer_sizes': (50, 10, 3)},
-                    {'solver': 'lbfgs', 'hidden_layer_sizes': (100, 20, 3)}]
-    fit_cross_validation(asset, "ANNBinary", create_clf=create_MLP, use_scaler=True,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # ANN Multinomial
-    response_vars = ['multinomial_YZ', 'multinomial_EWMA']
-    model_params = [{'solver': 'lbfgs', 'hidden_layer_sizes': (10)},
-                    {'solver': 'lbfgs', 'hidden_layer_sizes': (10, 3)},
-                    {'solver': 'lbfgs', 'hidden_layer_sizes': (50, 10, 3)},
-                    {'solver': 'lbfgs', 'hidden_layer_sizes': (100, 20, 3)}]
-    fit_cross_validation(asset, "ANNMulti", create_clf=create_MLP, use_scaler=True,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
+    if "knn" in regressors:
+        response_vars = ['log_returns']
+        model_params = [{'n_neighbors': 5},
+                        {'n_neighbors': 10}]
+        fit_model(asset, "KNNRegr", create_func=create_KNN_regressor, use_scaler=False,
+                  model_params=model_params, response_vars=response_vars,
+                  input_vars_list=input_vars_list, window_sizes=window_sizes)
 
     # ANN Regressor
-    response_vars = ['log_returns']
-    model_params = [{'solver': 'lbfgs', 'hidden_layer_sizes': (10)},
-                    {'solver': 'lbfgs', 'hidden_layer_sizes': (10, 3)},
-                    {'solver': 'lbfgs', 'hidden_layer_sizes': (50, 10, 3)},
-                    {'solver': 'lbfgs', 'hidden_layer_sizes': (100, 20, 3)}]
-    fit_cross_validation(asset, "ANNRegr", create_clf=create_MLP_regressor, use_scaler=True,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-
-def fit_models_crossvalidated_test(asset):
-    response_params = {'multinomial_YZ': [10]}
-    input_vars = ["Close", "ann_log_returns", "RSI", "CCI"]
-    input_params = {"RSI": [10, 20],
-                    "Stochastic": [10, 20],
-                    "MACD": [10, 20],
-                    "CCI": [10, 20],
-                    "ATR": [10, 20]
-                    }
-    window_sizes = [5, 10]
-
-    Log.info("Using %d days of data.", config().days())
-
-    # Regression
-    response_vars = ['log_returns']
-    model_params = [{}]
-    fit_cross_validation(asset, "LinRegr", create_clf=create_linear_regression, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Binary Logistic Regression
-    response_vars = ['binary']
-    model_params = [{'penalty': 'l2', 'solver': 'lbfgs', 'max_iter': 1000}]
-    fit_cross_validation(asset, "BinLogRegr", create_clf=create_binary_logistic_regression, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Multinomial Logistic Regression
-    response_vars = ['multinomial_YZ']
-    model_params = [{'solver': 'lbfgs', 'max_iter': 1000}]
-    fit_cross_validation(asset, "MultiLogRegr", create_clf=create_multinomial_logistic_regression, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Gaussian Naive Bayes
-    response_vars = ['binary']
-    model_params = [{}]
-    fit_cross_validation(asset, "GaussNBBin", create_clf=create_gaussian_naive_bayes, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Gaussian Naive Bayes
-    response_vars = ['multinomial_YZ']
-    model_params = [{}]
-    fit_cross_validation(asset, "GaussNBMulti", create_clf=create_gaussian_naive_bayes, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Gaussian Naive Bayes Regressor
-    # response_vars = ['log_returns']
-    # model_params = [{}]
-    # fit_cross_validation(asset, "GaussNBRegr", create_clf=create_gaussian_naive_bayes, use_scaler=False,
-    #                      model_params=model_params, response_vars=response_vars, response_params=response_params,
-    #                      input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Multinomial Naive Bayes
-    # response_vars = ['multinomial_YZ']
-    # model_params = [{}]
-    # fit_cross_validation(asset, "Multi_NB", create_clf=create_multinomial_naive_bayes, use_scaler=False,
-    #                      model_params=model_params, response_vars=response_vars, response_params=response_params,
-    #                      input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Decision Trees
-    response_vars = ['multinomial_YZ']
-    model_params = [{'criterion': 'gini'},
-                    {'criterion': 'entropy'}]
-    fit_cross_validation(asset, "DT", create_clf=create_decision_tree, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Decision Tree Regressor
-    response_vars = ['log_returns']
-    model_params = [{'max_depth': 10}]
-    fit_cross_validation(asset, "DTRegr", create_clf=create_decision_tree_regressor, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Bagging Decision Trees
-    response_vars = ['multinomial_YZ']
-    model_params = [{'n_estimators': 100},
-                    {'n_estimators': 200}]
-    fit_cross_validation(asset, "BaggingDT", create_clf=create_bagging_dt, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Bagging Decision Trees Regressors
-    response_vars = ['log_returns']
-    model_params = [{'n_estimators': 100},
-                    {'n_estimators': 200}]
-    fit_cross_validation(asset, "BaggingDTRegr", create_clf=create_bagging_dt_regressor, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Random Forst Classifier
-    response_vars = ['multinomial_YZ']
-    model_params = [{'n_estimators': 100},
-                    {'n_estimators': 200}]
-    fit_cross_validation(asset, "RF", create_clf=create_random_forest, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # Random Forst Regressor
-    response_vars = ['log_returns']
-    model_params = [{'n_estimators': 100},
-                    {'n_estimators': 200}]
-    fit_cross_validation(asset, "RFRegr", create_clf=create_random_forest_regressor, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # AdaBoost
-    response_vars = ['multinomial_YZ']
-    model_params = [{'n_estimators': 100},
-                    {'n_estimators': 200}]
-    fit_cross_validation(asset, "AdaBoost", create_clf=create_adaboost, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # AdaBoostRegressor
-    response_vars = ['log_returns']
-    model_params = [{'n_estimators': 100},
-                    {'n_estimators': 200}]
-    fit_cross_validation(asset, "AdaBoostRegr", create_clf=create_adaboost_regressor, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # SVM
-    response_vars = ['binary']
-    model_params = [{'kernel': 'rbf', 'decision_function_shape': 'ovo', 'gamma': 'auto'},
-                    {'kernel': 'sigmoid', 'decision_function_shape': 'ovo', 'gamma': 'auto'}]
-    fit_cross_validation(asset, "SVMBin", create_clf=create_SVM, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # SVM
-    response_vars = ['multinomial_YZ']
-    model_params = [{'kernel': 'rbf', 'decision_function_shape': 'ovo', 'gamma': 'auto'},
-                    {'kernel': 'sigmoid', 'decision_function_shape': 'ovo', 'gamma': 'auto'}]
-    fit_cross_validation(asset, "SVMMulti", create_clf=create_SVM, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # SVM Regressor
-    response_vars = ['log_returns']
-    model_params = [{'kernel': 'rbf', 'gamma': 'auto'}]
-    fit_cross_validation(asset, "SVMRegr", create_clf=create_SVM_regressor, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # KNN
-    response_vars = ['multinomial_YZ']
-    model_params = [{'n_neighbors': 5},
-                    {'n_neighbors': 10}]
-    fit_cross_validation(asset, "KNN", create_clf=create_KNN, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # KNN Regressor
-    response_vars = ['multinomial_YZ']
-    model_params = [{'n_neighbors': 5},
-                    {'n_neighbors': 10}]
-    fit_cross_validation(asset, "KNNRegr", create_clf=create_KNN_regressor, use_scaler=False,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # ANN Binomial
-    response_vars = ['binary']
-    model_params = [{'solver': 'lbfgs', 'hidden_layer_sizes': (10)},
-                    {'solver': 'lbfgs', 'hidden_layer_sizes': (10, 3)},
-                    {'solver': 'lbfgs', 'hidden_layer_sizes': (50, 10, 3)}]
-    fit_cross_validation(asset, "ANNBinary", create_clf=create_MLP, use_scaler=True,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # ANN Multinomial
-    response_vars = ['multinomial_YZ']
-    model_params = [{'solver': 'lbfgs', 'hidden_layer_sizes': (10)},
-                    {'solver': 'lbfgs', 'hidden_layer_sizes': (10, 3)},
-                    {'solver': 'lbfgs', 'hidden_layer_sizes': (50, 10, 3)}]
-    fit_cross_validation(asset, "ANNMulti", create_clf=create_MLP, use_scaler=True,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
-
-    # ANN Regressor
-    response_vars = ['log_returns']
-    model_params = [{'solver': 'lbfgs', 'hidden_layer_sizes': (10)},
-                    {'solver': 'lbfgs', 'hidden_layer_sizes': (10, 3)},
-                    {'solver': 'lbfgs', 'hidden_layer_sizes': (50, 10, 3)}]
-    fit_cross_validation(asset, "ANNRegr", create_clf=create_MLP_regressor, use_scaler=True,
-                         model_params=model_params, response_vars=response_vars, response_params=response_params,
-                         input_vars=input_vars, input_params=input_params, window_sizes=window_sizes)
+    if "nn" in regressors:
+        response_vars = ['log_returns']
+        model_params = [{'solver': 'lbfgs', 'hidden_layer_sizes': (10)},
+                        {'solver': 'lbfgs', 'hidden_layer_sizes': (10, 3)},
+                        {'solver': 'lbfgs', 'hidden_layer_sizes': (50, 10, 3)},
+                        {'solver': 'lbfgs', 'hidden_layer_sizes': (100, 20, 3)}]
+        fit_model(asset, "ANNRegr", create_func=create_MLP_regressor, use_scaler=True,
+                  model_params=model_params, response_vars=response_vars,
+                  input_vars_list=input_vars_list, window_sizes=window_sizes)

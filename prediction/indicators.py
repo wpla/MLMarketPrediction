@@ -51,6 +51,37 @@ def gen_Stochastics(data: pd.Series, K_n=5, D=5, D2=3):
            pd.Series(D_slow, index=data.index)
 
 
+def gen_Williams_R(data: pd.Series, n=10):
+    Williams_R = [None] * n
+    for t in range(n, len(data.index)):
+        L = min(filter(None, data[(t + 1 - n):(t + 1)]))
+        H = max(filter(None, data[(t + 1 - n):(t + 1)]))
+        R_t = (H - data.iat[t]) / (H - L) * -100
+        Williams_R.append(R_t)
+    return pd.Series(Williams_R, index=data.index)
+
+
+def gen_price_rate_of_change(data: pd.Series, n=10):
+    proc = [None] * n
+    for t in range(n, len(data.index)):
+        proc_t = (data.iat[t] - data.iat[t - n]) / data.iat[t - n]
+        proc.append(proc_t)
+    return pd.Series(proc, index=data.index)
+
+
+def gen_on_balance_volume(data: pd.DataFrame):
+    obv = [0]
+    for t in range(1, len(data.index)):
+        if data["Close"][t] > data["Close"][t - 1]:
+            obv_t = obv[-1] + data["Volume"][t]
+        elif data["Close"][t] < data["Close"][t - 1]:
+            obv_t = obv[-1] - data["Volume"][t]
+        else:
+            obv_t = obv[-1]
+        obv.append(obv_t)
+    return pd.Series(obv, index=data.index)
+
+
 def gen_MACD(data: pd.Series, n_fast=12, n_slow=26, n_signal=9):
     alpha_fast = 1 / (n_fast + 1)
     alpha_slow = 1 / (n_slow + 1)
@@ -413,7 +444,7 @@ def gen_indicators(asset):
         asset.append("STOCH_D_slow" + col_postfix(source), STOCH_D2)
 
     # Generate MACD indicator
-    Log.info("Generating ATR...")
+    Log.info("Generating MACD...")
     for source in ["Close", "EMA_5"]:
         MACD, MACD_Signal = gen_MACD(asset.data[source])
         asset.append("MACD" + col_postfix(source), MACD)
@@ -431,6 +462,24 @@ def gen_indicators(asset):
         ATR = gen_ATR(asset.data, n=days)
         asset.append("ATR_" + str(days), ATR)
 
+    # Generate Williams R indicator
+    Log.info("Generating Williams R...")
+    for (days, source) in itertools.product([10, 14, 20, 50], ["Close", "EMA_5"]):
+        williams_r = gen_Williams_R(asset.data[source], n=days)
+        asset.append("Williams_R_" + str(days) + col_postfix(source), williams_r)
+
+    # Generate PROC
+    Log.info("Generating Price Rate of Change...")
+    for days, source in itertools.product([10, 14, 20, 40, 50, 60], ["Close", "EMA_5"]):
+        proc = gen_price_rate_of_change(asset.data[source], n=days)
+        asset.append("PROC_" + str(days) + col_postfix(source), proc)
+
+    # Generate On Balance Volume
+    Log.info("Generating On Balance Volume...")
+    for source in ["Close", "EMA_5"]:
+        obv = gen_price_rate_of_change(asset.data[source], n=days)
+        asset.append("OBV" + col_postfix(source), obv)
+
     # Generate ADL indicator
     Log.info("Generating ADL...")
     ADL = gen_ADL(asset.data)
@@ -438,7 +487,7 @@ def gen_indicators(asset):
 
     # Generate returns
     Log.info("Generating returns...")
-    for days in [1, 5, 20, 30, 60, 90]:
+    for days in [1, 5, 20, 30, 40, 60, 90]:
         returns_d, log_returns_d, ann_log_returns_d, = gen_returns2(asset.data, delta=days)
         asset.append("returns_" + str(days), returns_d)
         asset.append("log_returns_" + str(days), log_returns_d)
@@ -446,14 +495,14 @@ def gen_indicators(asset):
 
     # Generate simple volatility
     Log.info("Generating simple volatility...")
-    for days in [1, 5, 20, 30, 60, 90]:
+    for days in [1, 5, 20, 30, 40, 60, 90]:
         vola, ann_vola = gen_SimpleVola(asset.data["Close"], days=days)
         asset.append("vola_" + str(days), vola)
         asset.append("ann_vola_" + str(days), ann_vola)
 
     # Generate EWMA volatility
     Log.info("Generating EWMA volatility...")
-    for days in [1, 5, 20, 30, 60, 90]:
+    for days in [1, 5, 20, 30, 40, 60, 90]:
         EWMA_ann_vola = gen_EWMA_Vola(asset.data["Close"], n=max(days, 5))
         asset.append("EWMA_ann_vola_" + str(days), EWMA_ann_vola)
         tertiary_EWMA = gen_tertiary_response(asset.data,
@@ -467,7 +516,7 @@ def gen_indicators(asset):
 
     # Generate Yang & Zhang volatility
     Log.info("Generating Yang & Zhang volatility...")
-    for days in [1, 5, 20, 30, 60, 90]:
+    for days in [1, 5, 20, 30, 40, 60, 90]:
         YZ_vola = gen_YZ_Vola(asset.data, days=max(days, 5))
         asset.append("YZ_Vola_" + str(days), YZ_vola)
         tertiary_YZ = gen_tertiary_response(asset.data,
@@ -480,7 +529,7 @@ def gen_indicators(asset):
         asset.append("multinomial_YZ_" + str(days), multinomial_YZ)
 
     # Generate binary response variables
-    for days in [1, 5, 20, 30, 60, 90]:
+    for days in [1, 5, 20, 30, 40, 60, 90]:
         binary = gen_binary_response(asset.data, asset.data["ann_log_returns_" + str(days)])
         asset.append("binary_" + str(days), binary)
 

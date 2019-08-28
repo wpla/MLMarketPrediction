@@ -3,11 +3,10 @@
   <component name="ChangeListManager">
     <list default="true" id="33e38582-3602-420a-a604-f3a77c05d35f" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/prediction/find_uncorrelated.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/prediction/fit_models.py" beforeDir="false" afterPath="$PROJECT_DIR$/prediction/fit_models.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/prediction/indicators.py" beforeDir="false" afterPath="$PROJECT_DIR$/prediction/indicators.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/prediction/lstm_model.py" beforeDir="false" afterPath="$PROJECT_DIR$/prediction/lstm_model.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/prediction/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/prediction/models.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/fit_models.bat" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/fit_models.bat" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -21,13 +20,6 @@
         <option value="Python Script" />
       </list>
     </option>
-  </component>
-  <component name="FindInProjectRecents">
-    <findStrings>
-      <find>indicators.</find>
-      <find>epochs</find>
-      <find>outfile.flush</find>
-    </findStrings>
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -92,7 +84,7 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/prediction/fit_models.py" />
-      <option name="PARAMETERS" value="--output_path ../output ../data/IBM_full.csv  --models lstm" />
+      <option name="PARAMETERS" value="--output_path ../output ../data/IBM_full_04.csv  --models clf --clf rf" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
       <option name="MODULE_MODE" value="false" />
@@ -332,7 +324,9 @@
       <map>
         <entry key="MAIN">
           <value>
-            <State />
+            <State>
+              <option name="COLUMN_ORDER" />
+            </State>
           </value>
         </entry>
       </map>
@@ -343,5 +337,16 @@
     <MESSAGE value="update EWMA-20" />
     <MESSAGE value="update" />
     <option name="LAST_COMMIT_MESSAGE" value="update" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/prediction/models.py</url>
+          <line>138</line>
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
 </project>
