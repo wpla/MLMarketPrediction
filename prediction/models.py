@@ -224,8 +224,24 @@ def fit_model(asset,
         os.mkdir(config().output_path())
 
     outfile = open(os.path.join(config().output_path(), model_name + "_" + asset.symbol + ".csv"), "w")
-    outfile.write("asset;model;response_var;days;input_var;input_param;window_size;model_param;"
-                  "n_train;n_test;Overall_MCC;test_score\n")
+    outfile.write("asset;"
+                  "model;"
+                  "response_var;"
+                  "days;"
+                  "input_var;"
+                  "input_param;"
+                  "window_size;"
+                  "model_param;"
+                  "n_train;"
+                  "n_test;"
+                  "Overall_MCC;"
+                  "Overall_ACC;"
+                  "PPV_Micro;"
+                  "PPV_Macro;"
+                  "TPR_Micro;"
+                  "TPR_Macro;"
+                  "Cramer's V;"
+                  "P value\n")
 
     for response_var, input_vars, days_, window_size, model_param in gen_model_variants(response_vars, input_vars_list,
                                                                                         days, window_sizes,
@@ -257,7 +273,8 @@ def fit_model(asset,
 
         clf = create_func(model_param)
         scores = score_model(clf, X_train, y_train)
-        Log.info("Model overall MCC: %0.2f" % scores.Overall_MCC)
+        Log.info("Model overall MCC: %0.4f" % scores.Overall_MCC)
+        Log.info("Model overall ACC: %0.4f" % scores.Overall_ACC)
 
         # Write results to file
         outfile.write("%s;%s;%s;%s;%s;%s;%s;"
@@ -269,7 +286,13 @@ def fit_model(asset,
                                        str(model_param),
                                        len(X_train), len(X_test),
                                        scores.Overall_MCC,
-                                       0.0))
+                                       scores.Overall_ACC,
+                                       scores.PPV_Micro,
+                                       scores.PPV_Macro,
+                                       scores.TPR_Mico,
+                                       scores.TPR_Macro,
+                                       scores.V,
+                                       scores.PValue))
         outfile.flush()
     outfile.close()
 

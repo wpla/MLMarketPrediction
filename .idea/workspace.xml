@@ -3,7 +3,6 @@
   <component name="ChangeListManager">
     <list default="true" id="33e38582-3602-420a-a604-f3a77c05d35f" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/prediction/indicators.py" beforeDir="false" afterPath="$PROJECT_DIR$/prediction/indicators.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/prediction/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/prediction/models.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
@@ -345,7 +344,21 @@
       <option name="project" value="LOCAL" />
       <updated>1567073844414</updated>
     </task>
-    <option name="localTasksCounter" value="16" />
+    <task id="LOCAL-00016" summary="update">
+      <created>1567077327725</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1567077327725</updated>
+    </task>
+    <task id="LOCAL-00017" summary="remove continue">
+      <created>1567077405683</created>
+      <option name="number" value="00017" />
+      <option name="presentableId" value="LOCAL-00017" />
+      <option name="project" value="LOCAL" />
+      <updated>1567077405683</updated>
+    </task>
+    <option name="localTasksCounter" value="18" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -365,7 +378,8 @@
     <MESSAGE value="update YZ-20" />
     <MESSAGE value="update EWMA-20" />
     <MESSAGE value="update" />
-    <option name="LAST_COMMIT_MESSAGE" value="update" />
+    <MESSAGE value="remove continue" />
+    <option name="LAST_COMMIT_MESSAGE" value="remove continue" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
