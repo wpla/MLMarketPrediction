@@ -465,8 +465,8 @@ def gen_indicators(asset):
     # Generate Williams R indicator
     Log.info("Generating Williams R...")
     for (days, source) in itertools.product([10, 14, 20, 50], ["Close", "EMA_5"]):
-        williams_r = gen_Williams_R(asset.data[source], n=days)
-        asset.append("Williams_R_" + str(days) + col_postfix(source), williams_r)
+        williams_R = gen_Williams_R(asset.data[source], n=days)
+        asset.append("Williams_R_" + str(days) + col_postfix(source), williams_R)
 
     # Generate PROC
     Log.info("Generating Price Rate of Change...")

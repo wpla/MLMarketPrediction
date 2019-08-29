@@ -100,6 +100,7 @@ def create_response_data(asset, response_var, response_param=None):
 def make_input_col(input_var, days):
     if days is None:
         return input_var
+    days = max(days, 10)
     for name in ["Close", "OBV", "ADL", "MACD", "STOCH"]:
         if name in input_var:
             return input_var
@@ -112,55 +113,57 @@ def make_input_cols(input_vars, days):
     return [make_input_col(var, days) for var in input_vars]
 
 
-def create_input_data(asset, input_var, days=None):
-    input_col = make_input_col(input_var, days)
+def create_input_data(asset, input_vars, days=None):
+    for input_var in input_vars:
+        days = max(days, 10)
+        input_col = make_input_col(input_var, days)
 
-    source = "Close"  # We are calculating indicators from closing prices per default
-    for ema_days in re.findall(r"_E(\d+)$", input_var):
-        # if "_Exx" is given, we are calculating indicators from EMA prices
-        source = "EMA_" + ema_days
-        input_var = input_var.replace("_E" + ema_days, "")
-        if source not in asset.data:
-            EMA = indicators.gen_EMA(asset.data["Close"], n=int(ema_days))
-            asset.append(source, EMA)
-            Log.info("%s created", source)
+        source = "Close"  # We are calculating indicators from closing prices per default
+        for ema_days in re.findall(r"_E(\d+)$", input_var):
+            # if "_Exx" is given, we are calculating indicators from EMA prices
+            source = "EMA_" + ema_days
+            input_var = input_var.replace("_E" + ema_days, "")
+            if source not in asset.data:
+                EMA = indicators.gen_EMA(asset.data["Close"], n=int(ema_days))
+                asset.append(source, EMA)
+                Log.info("%s created", source)
 
-    if input_col not in asset.data:
-        Log.info("Need to make input variable: %s", input_col)
-        if input_var == "RSI" and days is not None:
-            RSI = indicators.gen_RSI(asset.data[source], days)
-            asset.append(input_col, RSI)
-            Log.info("%s created", input_col)
-        elif input_var == "EMA" and days is not None:
-            EMA = indicators.gen_EMA(asset.data["Close"], n=days)
-            asset.append(input_col, EMA)
-            Log.info("%s created", input_col)
-        elif input_var == "CCI" and days is not None:
-            CCI = indicators.gen_CCI(asset.data, days)
-            asset.append(input_col, CCI)
-            Log.info("%s created", input_col)
-        elif input_var == "ATR" and days is not None:
-            ATR = indicators.gen_ATR(asset.data, days)
-            asset.append(input_col, ATR)
-            Log.info("%s created", input_col)
-        elif input_var == "ADL":
-            ADL = indicators.gen_ADL(asset.data)
-            asset.append(input_col, ADL)
-            Log.info("%s created", input_col)
-        elif input_var == "Williams_R":
-            Williams_R = indicators.gen_Williams_R(asset.data, days)
-            asset.append(input_col, Williams_R)
-            Log.info("%s created", input_col)
-        elif input_var == "PROC":
-            PROC = indicators.gen_price_rate_of_change(source, days)
-            asset.append(input_col, PROC)
-            Log.info("%s created", input_col)
-        elif input_var == "OBV":
-            OBV = indicators.gen_on_balance_volume(asset.data)
-            asset.append(input_col, OBV)
-            Log.info("%s created", input_col)
-        else:
-            ValueError("Invalid input variable / input param: %s / %s", input_var, str(days))
+        if input_col not in asset.data:
+            Log.info("Need to make input variable %s (%s with parameter %d from %s)", input_col, input_var, days, source)
+            if input_var == "RSI" and days is not None:
+                RSI = indicators.gen_RSI(asset.data[source], days)
+                asset.append(input_col, RSI)
+                Log.info("%s created", input_col)
+            elif input_var == "EMA" and days is not None:
+                EMA = indicators.gen_EMA(asset.data["Close"], n=days)
+                asset.append(input_col, EMA)
+                Log.info("%s created", input_col)
+            elif input_var == "CCI" and days is not None:
+                CCI = indicators.gen_CCI(asset.data, days)
+                asset.append(input_col, CCI)
+                Log.info("%s created", input_col)
+            elif input_var == "ATR" and days is not None:
+                ATR = indicators.gen_ATR(asset.data, days)
+                asset.append(input_col, ATR)
+                Log.info("%s created", input_col)
+            elif input_var == "ADL":
+                ADL = indicators.gen_ADL(asset.data)
+                asset.append(input_col, ADL)
+                Log.info("%s created", input_col)
+            elif input_var == "Williams_R":
+                Williams_R = indicators.gen_Williams_R(asset.data[source], days)
+                asset.append(input_col, Williams_R)
+                Log.info("%s created", input_col)
+            elif input_var == "PROC":
+                PROC = indicators.gen_price_rate_of_change(asset.data[source], days)
+                asset.append(input_col, PROC)
+                Log.info("%s created", input_col)
+            elif input_var == "OBV":
+                OBV = indicators.gen_on_balance_volume(asset.data)
+                asset.append(input_col, OBV)
+                Log.info("%s created", input_col)
+            else:
+                ValueError("Invalid input variable / input param: %s / %s", input_var, str(days))
 
     return asset
 
@@ -198,7 +201,7 @@ def gen_model_variants(response_vars, input_vars_list, days, window_sizes, model
             days_ = [None]
 
         for days__ in days_:
-            for input_vars_n in range(len(input_vars_list)):
+            for input_vars_n in range(len(input_vars)):
                 for input_vars_ in itertools.combinations(input_vars, input_vars_n + 1):
                     yield response_var, input_vars_, days__, window_size, model_param
 
@@ -227,15 +230,15 @@ def fit_model(asset,
     for response_var, input_vars, days_, window_size, model_param in gen_model_variants(response_vars, input_vars_list,
                                                                                         days, window_sizes,
                                                                                         model_params):
-        Log.info("Fitting %s for response_var=%s, days=%s, input_var=%s, "
-                 "window_size=%s, model_param=%s", model_name, response_var, str(days_), str(input_vars),
-                 str(window_size), str(model_param))
-
         # Create data
         asset = create_response_data(asset, response_var, days_)
         asset = create_input_data(asset, input_vars, days_)
         response_col = make_response_col(response_var, days_)
         input_cols = make_input_cols(input_vars, days_)
+
+        Log.info("Fitting %s for response_var=%s, days=%s, input_var=%s, "
+                 "window_size=%s, model_param=%s", model_name, response_col, str(days_), str(input_cols),
+                 str(window_size), str(model_param))
 
         continue
 
@@ -392,13 +395,13 @@ def fit_classifiers(asset, classifiers):
     input_vars_list = [["RSI_E5", "STOCH_K", "MACD", "Williams_R_E5", "PROC_E5", "OBV", "CCI", "ATR", "ADL"],
                        ["RSI", "STOCH_K", "MACD", "Williams_R", "PROC", "OBV", "CCI", "ATR", "ADL"]
                       ]
-    window_sizes = [1, 5, 10, 15, 21]
+    window_sizes = [1, 5, 10, 15, 20]
 
     # Logistic Regression
     if "logreg" in classifiers:
         models = {'LogReg-bin': ['binary'],
                   'LogReg-tert': ['tertiary_YZ'],
-                  'LogReg-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+                  'LogReg-multi': ['multinomial_YZ']}
         model_params = [{'penalty': 'l2', 'solver': 'lbfgs', 'max_iter': 10000}]
         for model_name, response_vars in models.items():
             fit_model(asset, model_name, create_func=create_binary_logistic_regression, use_scaler=False,
@@ -409,7 +412,7 @@ def fit_classifiers(asset, classifiers):
     if "nb" in classifiers:
         models = {'NaiveBayes-bin': ['binary'],
                   'NaiveBayes-tert': ['tertiary_YZ'],
-                  'NaiveBayes-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+                  'NaiveBayes-multi': ['multinomial_YZ']}
         model_params = [{}]
         for model_name, response_vars in models.items():
             fit_model(asset, model_name, create_func=create_gaussian_naive_bayes, use_scaler=False,
@@ -420,7 +423,7 @@ def fit_classifiers(asset, classifiers):
     if "dt" in classifiers:
         models = {'DT-bin': ['binary'],
                   'DT-tert': ['tertiary_YZ'],
-                  'DT-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+                  'DT-multi': ['multinomial_YZ']}
         model_params = [{'criterion': 'gini'},
                         {'criterion': 'entropy'}]
         for model_name, response_vars in models.items():
@@ -432,10 +435,10 @@ def fit_classifiers(asset, classifiers):
     if "bdt" in classifiers:
         models = {'BaggingDT-bin': ['binary'],
                   'BaggingDT-tert': ['tertiary_YZ'],
-                  'BaggingDT-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+                  'BaggingDT-multi': ['multinomial_YZ']}
         model_params = [{'n_estimators': 10},
-                        {'n_estimators': 100},
-                        {'n_estimators': 300}]
+                        {'n_estimators': 50},
+                        {'n_estimators': 100}]
         for model_name, response_vars in models.items():
             fit_model(asset, model_name, create_func=create_bagging_dt, use_scaler=False,
                       response_vars=response_vars, input_vars_list=input_vars_list, days=days,
@@ -445,10 +448,10 @@ def fit_classifiers(asset, classifiers):
     if "rf" in classifiers:
         models = {'RF-bin': ['binary'],
                   'RF-tert': ['tertiary_YZ'],
-                  'RF-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+                  'RF-multi': ['multinomial_YZ']}
         model_params = [{'n_estimators': 10},
-                        {'n_estimators': 100},
-                        {'n_estimators': 300}]
+                        {'n_estimators': 50},
+                        {'n_estimators': 100}]
         for model_name, response_vars in models.items():
             fit_model(asset, model_name, create_func=create_random_forest, use_scaler=False,
                       response_vars=response_vars, input_vars_list=input_vars_list, days=days,
@@ -458,10 +461,10 @@ def fit_classifiers(asset, classifiers):
     if "adaboost" in classifiers:
         models = {'AdaBoost-bin': ['binary'],
                   'AdaBoost-tert': ['tertiary_YZ'],
-                  'AdaBoost-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+                  'AdaBoost-multi': ['multinomial_YZ']}
         model_params = [{'n_estimators': 10},
-                        {'n_estimators': 100},
-                        {'n_estimators': 300}]
+                        {'n_estimators': 50},
+                        {'n_estimators': 100}]
         for model_name, response_vars in models.items():
             fit_model(asset, model_name, create_func=create_adaboost, use_scaler=False,
                       response_vars=response_vars, input_vars_list=input_vars_list, days=days,
@@ -471,7 +474,7 @@ def fit_classifiers(asset, classifiers):
     if "svm" in classifiers:
         models = {'SVM-bin': ['binary'],
                   'SVM-tert': ['tertiary_YZ'],
-                  'SVM-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+                  'SVM-multi': ['multinomial_YZ']}
         model_params = [{'kernel': 'rbf', 'decision_function_shape': 'ovo', 'gamma': 'auto'},
                         {'kernel': 'sigmoid', 'decision_function_shape': 'ovo', 'gamma': 'auto'}]
         for model_name, response_vars in models.items():
@@ -483,7 +486,7 @@ def fit_classifiers(asset, classifiers):
     if "knn" in classifiers:
         models = {'KNN-bin': ['binary'],
                   'KNN-tert': ['tertiary_YZ'],
-                  'KNN-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+                  'KNN-multi': ['multinomial_YZ']}
         model_params = [{'n_neighbors': 5},
                         {'n_neighbors': 10}]
         for model_name, response_vars in models.items():
@@ -491,15 +494,14 @@ def fit_classifiers(asset, classifiers):
                       response_vars=response_vars, input_vars_list=input_vars_list, days=days,
                       window_sizes=window_sizes, model_params=model_params)
 
-    # ANN Binomial
+    # ANN
     if "nn" in classifiers:
         models = {'ANN-bin': ['binary'],
                   'ANN-tert': ['tertiary_YZ'],
-                  'ANN-multi': ['multinomial_YZ', 'multinomial_EWMA']}
+                  'ANN-multi': ['multinomial_YZ']}
         model_params = [{'solver': 'lbfgs', 'hidden_layer_sizes': (10)},
-                        {'solver': 'lbfgs', 'hidden_layer_sizes': (10, 3)},
-                        {'solver': 'lbfgs', 'hidden_layer_sizes': (50, 10, 3)},
-                        {'solver': 'lbfgs', 'hidden_layer_sizes': (100, 20, 3)}]
+                        {'solver': 'lbfgs', 'hidden_layer_sizes': (50, 10)},
+                        {'solver': 'lbfgs', 'hidden_layer_sizes': (100, 50, 10)}]
         for model_name, response_vars in models.items():
             fit_model(asset, model_name, create_func=create_MLP, use_scaler=True,
                       response_vars=response_vars, input_vars_list=input_vars_list, days=days,
