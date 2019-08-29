@@ -240,8 +240,6 @@ def fit_model(asset,
                  "window_size=%s, model_param=%s", model_name, response_col, str(days_), str(input_cols),
                  str(window_size), str(model_param))
 
-        continue
-
         # Create test and training data
         X, y = make_data(asset, response_col=response_col, input_cols=input_cols, window_size=window_size,
                          days=config().days(), flatten=True)
