@@ -251,7 +251,7 @@ def fit_model(asset,
         response_col = make_response_col(response_var, days_)
         input_cols = make_input_cols(input_vars, days_)
 
-        Log.info("Fitting %s for response_var=%s, days=%s, input_var=%s, "
+        Log.info("Fitting %s for response_col=%s, days=%s, input_cols=%s, "
                  "window_size=%s, model_param=%s", model_name, response_col, str(days_), str(input_cols),
                  str(window_size), str(model_param))
 
