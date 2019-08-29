@@ -168,25 +168,28 @@ def create_input_data(asset, input_vars, days=None):
     return asset
 
 
-def score_model(clf, X, y, split_factor=0.2):
+def score_model(clf, X, y, split_factor=0.2, window_size=5):
     n = len(X)
     test_len = int(n * split_factor)
 
     y_real = []
     y_pred = []
-    y_proba = []
+    # y_proba = []
 
-    for i in range(test_len, 0, -1):
-        X_train = X[:-i]
-        y_train = y[:-i]
+    for i in range(test_len, 0, -window_size):
+        X_train = X[:n-i]
+        y_train = y[:n-i]
         clf.fit(X_train, y_train)
 
-        y_pred_t = clf.predict([X[n - i]])[0]
-        y_proba_t = clf.predict_proba([X[n - i]])[0]
+        y_pred_t = clf.predict(X[n-i:n-i+window_size])
+        # y_proba_t = clf.predict_proba(X[n-i:n-i+window_size])
 
-        y_real.append(y[n - i])
-        y_pred.append(y_pred_t)
-        y_proba.append(y_proba_t)
+        for y_t in y[n - i:n - i + window_size]:
+            y_real.append(y_t)
+        for y_t in y_pred_t:
+            y_pred.append(y_t)
+        # for y_t in y_proba_t:
+        #     y_proba.append(y_t)
 
     return pycm.ConfusionMatrix(y_real, y_pred)
 
