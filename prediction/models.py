@@ -225,11 +225,10 @@ def fit_model(asset,
 
     outfile = open(os.path.join(config().output_path(), model_name + "_" + asset.symbol + ".csv"), "w")
     outfile.write("asset;"
-                  "model;"
-                  "response_var;"
+                  "model_name;"
+                  "response_col;"
                   "days;"
-                  "input_var;"
-                  "input_param;"
+                  "input_cols;"
                   "window_size;"
                   "model_param;"
                   "n_train;"
@@ -279,9 +278,11 @@ def fit_model(asset,
         # Write results to file
         outfile.write("%s;%s;%s;%s;%s;%s;%s;"
                       "%d;%d;"
-                      "%.4f;%.4f\n" % (asset.symbol, model_name,
-                                       response_var, days_,
-                                       str(input_vars),
+                      "%.4f;%.4f;%.4f;%.4f;%.4f;%.4f;%.4f;%.4f\n" % (asset.symbol,
+                                       model_name,
+                                       response_col,
+                                       days_,
+                                       str(input_cols),
                                        str(window_size),
                                        str(model_param),
                                        len(X_train), len(X_test),
@@ -289,7 +290,7 @@ def fit_model(asset,
                                        scores.Overall_ACC,
                                        scores.PPV_Micro,
                                        scores.PPV_Macro,
-                                       scores.TPR_Mico,
+                                       scores.TPR_Micro,
                                        scores.TPR_Macro,
                                        scores.V,
                                        scores.PValue))

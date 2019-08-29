@@ -2,7 +2,6 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="33e38582-3602-420a-a604-f3a77c05d35f" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/prediction/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/prediction/models.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
@@ -358,7 +357,14 @@
       <option name="project" value="LOCAL" />
       <updated>1567077405683</updated>
     </task>
-    <option name="localTasksCounter" value="18" />
+    <task id="LOCAL-00018" summary="update scores">
+      <created>1567080071119</created>
+      <option name="number" value="00018" />
+      <option name="presentableId" value="LOCAL-00018" />
+      <option name="project" value="LOCAL" />
+      <updated>1567080071119</updated>
+    </task>
+    <option name="localTasksCounter" value="19" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -379,7 +385,8 @@
     <MESSAGE value="update EWMA-20" />
     <MESSAGE value="update" />
     <MESSAGE value="remove continue" />
-    <option name="LAST_COMMIT_MESSAGE" value="remove continue" />
+    <MESSAGE value="update scores" />
+    <option name="LAST_COMMIT_MESSAGE" value="update scores" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
