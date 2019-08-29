@@ -476,9 +476,8 @@ def gen_indicators(asset):
 
     # Generate On Balance Volume
     Log.info("Generating On Balance Volume...")
-    for source in ["Close", "EMA_5"]:
-        obv = gen_price_rate_of_change(asset.data[source], n=days)
-        asset.append("OBV" + col_postfix(source), obv)
+    obv = gen_on_balance_volume(asset.data)
+    asset.append("OBV", obv)
 
     # Generate ADL indicator
     Log.info("Generating ADL...")

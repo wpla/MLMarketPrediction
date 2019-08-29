@@ -247,7 +247,7 @@ def fit_LSTM_model_signal(asset, response_var, input_vars, window_size, model_la
     asset = create_response_data(asset, response_var)
 
     # Make response variable y and input matrix X
-    y, X = make_data(asset, response_col, input_cols, window_size, config().days())
+    X, y = make_data(asset, response_col, input_cols, window_size, config().days())
 
     # Convert X to numpy array
     X = np.array([x_i.values for x_i in X])
